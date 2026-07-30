@@ -121,8 +121,8 @@ public class PipeLinkBindListener implements Listener {
 
         Block recv = PipeLinkIndex.get().getReceiverSignBlock(rid);
         if (recv != null) {
-            p.sendMessage(ChatColor.AQUA + "[Pipes] Sender bundet til receiver @ "
-                    + recv.getWorld().getName() + " " + recv.getX() + " " + recv.getY() + " " + recv.getZ());
+            sendLocationMessage(p, ChatColor.AQUA + "[Pipes] Sender bundet til receiver @ "
+                    + recv.getWorld().getName() + " " + recv.getX() + " " + recv.getY() + " " + recv.getZ(), recv);
             drawLinkParticles(p, center(senderSign.getBlock()), center(recv));
         } else {
             p.sendMessage(ChatColor.YELLOW + "[Pipes] Sender bundet, men receiveren kan ikke findes i verden (forældet?).");
@@ -138,8 +138,8 @@ public class PipeLinkBindListener implements Listener {
             }
             Block recv = PipeLinkIndex.get().getReceiverSignBlock(rid);
             if (recv != null && SignUtil.isSign(recv)) {
-                p.sendMessage(ChatColor.GREEN + "[Pipes] Sender er bundet til receiver @ "
-                        + recv.getWorld().getName() + " " + recv.getX() + " " + recv.getY() + " " + recv.getZ());
+                sendLocationMessage(p, ChatColor.GREEN + "[Pipes] Sender er bundet til receiver @ "
+                        + recv.getWorld().getName() + " " + recv.getX() + " " + recv.getY() + " " + recv.getZ(), recv);
                 drawLinkParticles(p, center(clicked.getBlock()), center(recv));
             } else {
                 p.sendMessage(ChatColor.YELLOW + "[Pipes] Receiveren findes ikke (forældet link).");
@@ -168,8 +168,9 @@ public class PipeLinkBindListener implements Listener {
                 World w = Bukkit.getWorld(sr.world());
                 if (w == null)
                     continue;
-                p.sendMessage(ChatColor.GRAY + "- " + w.getName() + " " + sr.x() + " " + sr.y() + " " + sr.z());
-                drawLinkParticles(p, center(w.getBlockAt(sr.x(), sr.y(), sr.z())), center(clicked.getBlock()));
+                Block senderBlock = w.getBlockAt(sr.x(), sr.y(), sr.z());
+                sendLocationMessage(p, ChatColor.GRAY + "- " + w.getName() + " " + sr.x() + " " + sr.y() + " " + sr.z(), senderBlock);
+                drawLinkParticles(p, center(senderBlock), center(clicked.getBlock()));
             }
         } else {
             p.sendMessage(ChatColor.RED + "[Pipes] Dette er ikke et PipeLink-skilt.");
@@ -204,6 +205,23 @@ public class PipeLinkBindListener implements Listener {
 
     private static Location center(Block b) {
         return new Location(b.getWorld(), b.getX() + 0.5, b.getY() + 0.5, b.getZ() + 0.5);
+    }
+
+    /**
+     * Sends a message describing a linked location. For players allowed to teleport, the
+     * message is clickable and teleports them to the target (cross-dimension via execute).
+     */
+    private static void sendLocationMessage(Player p, String legacyText, Block target) {
+        if (io.papermc.lib.PaperLib.isPaper() && p.hasPermission("minecraft.command.teleport")) {
+            String cmd = "/minecraft:execute in " + target.getWorld().getKey() + " run teleport @s "
+                    + (target.getX() + 0.5) + " " + (target.getY() + 0.5) + " " + (target.getZ() + 0.5);
+            p.sendMessage(net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer.legacySection().deserialize(legacyText)
+                    .clickEvent(net.kyori.adventure.text.event.ClickEvent.runCommand(cmd))
+                    .hoverEvent(net.kyori.adventure.text.Component.text(
+                            "Klik for at teleportere til " + target.getWorld().getName() + " " + target.getX() + " " + target.getY() + " " + target.getZ())));
+        } else {
+            p.sendMessage(legacyText);
+        }
     }
 
     private static void drawLinkParticles(Player p, Location a, Location b) {
