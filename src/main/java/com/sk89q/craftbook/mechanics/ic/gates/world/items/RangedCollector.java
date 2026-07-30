@@ -135,10 +135,10 @@ public class RangedCollector extends AbstractSelfTriggeredIC {
                 if(!ItemUtil.isStackValid(filter))
                     continue;
 
-                if(include && ItemUtil.areItemsIdentical(filter, stack)) {
+                if(include && ItemUtil.matchesFilter(filter, stack)) {
                     passed = true;
                     break;
-                } else if(!include && ItemUtil.areItemsIdentical(filter, stack)) {
+                } else if(!include && ItemUtil.matchesFilter(filter, stack)) {
                     passed = false;
                     break;
                 }

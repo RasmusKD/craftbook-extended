@@ -472,7 +472,7 @@ public class Pipes extends AbstractCraftBookMechanic {
         if (!(bl.getBlockData() instanceof Piston p))
             return true;
 
-        List<ItemStack> filteredItems = new ArrayList<>(VerifyUtil.withoutNulls(ItemUtil.filterItems(items, signFilters.filters, signFilters.exceptions)));
+        List<ItemStack> filteredItems = new ArrayList<>(VerifyUtil.withoutNulls(ItemUtil.filterItemsLoose(items, signFilters.filters, signFilters.exceptions)));
 
         // Skip the event (and the defensive set copies) entirely when nothing listens.
         if (PipeFilterEvent.getHandlerList().getRegisteredListeners().length > 0) {
@@ -525,7 +525,7 @@ public class Pipes extends AbstractCraftBookMechanic {
      * Same contract as {@link #processPistonOutput}, for droppers.
      */
     private boolean processDropperOutput(Block bl, List<ItemStack> items, CachedFilters signFilters, boolean runPassThrough) {
-        List<ItemStack> filteredItems = new ArrayList<>(VerifyUtil.withoutNulls(ItemUtil.filterItems(items, signFilters.filters, signFilters.exceptions)));
+        List<ItemStack> filteredItems = new ArrayList<>(VerifyUtil.withoutNulls(ItemUtil.filterItemsLoose(items, signFilters.filters, signFilters.exceptions)));
 
         if(filteredItems.isEmpty())
             return runPassThrough;
@@ -600,7 +600,7 @@ public class Pipes extends AbstractCraftBookMechanic {
                     if (!ItemUtil.isStackValid(stack))
                         continue;
 
-                    if(!ItemUtil.doesItemPassFilters(stack, filters, exceptions))
+                    if(!ItemUtil.doesItemPassLooseFilters(stack, filters, exceptions))
                         continue;
 
                     items.add(stack);
@@ -635,7 +635,7 @@ public class Pipes extends AbstractCraftBookMechanic {
                 if (!ItemUtil.isStackValid(f.getInventory().getResult()))
                     return;
 
-                if(!ItemUtil.doesItemPassFilters(f.getInventory().getResult(), filters, exceptions))
+                if(!ItemUtil.doesItemPassLooseFilters(f.getInventory().getResult(), filters, exceptions))
                     return;
                 items.add(f.getInventory().getResult());
                 if (f.getInventory().getResult() != null) f.getInventory().setResult(null);
@@ -809,6 +809,9 @@ public class Pipes extends AbstractCraftBookMechanic {
         config.setComment(path + "traversal-cache", "Cache pipe block-type lookups between pulses. Auto-invalidated on block changes, and fully expires every 5 seconds as a safety net for eventless changes (WorldEdit, plugin API). Deposits are always verified live.");
         pipeTraversalCache = config.getBoolean(path + "traversal-cache", true);
         typeCache.clear();
+
+        config.setComment(path + "filters-match-type", "When a pipe or collector filter entry has no item meta, match by item type alone so potions, enchanted books and renamed items are caught by plain filters instead of passing through. Disable for strict vanilla meta matching.");
+        com.sk89q.craftbook.util.ItemUtil.setLooseFilterMatching(config.getBoolean(path + "filters-match-type", true));
 
         config.setComment(path + "link-protection", "GriefPrevention trust required to bind PipeLink senders and receivers inside a claim: none, access, container, build or permission. Claim owners can always bind; unclaimed land is always allowed. Ignored when GriefPrevention is not installed.");
         com.sk89q.craftbook.mechanics.ic.gates.world.miscellaneous.PipeLinkProtection.setLevel(config.getString(path + "link-protection", "permission"));

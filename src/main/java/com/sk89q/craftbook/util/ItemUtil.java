@@ -371,6 +371,61 @@ public final class ItemUtil {
         return true;
     }
 
+    /**
+     * When enabled (the default), filter entries that carry no item meta match on type
+     * alone, so a plain 'potion' filter also catches brewed potions, enchanted books and
+     * renamed items instead of letting them pass through. Filters that do specify meta
+     * always compare it. Configured by the Pipes mechanic.
+     */
+    private static boolean looseFilterMatching = true;
+
+    public static void setLooseFilterMatching(boolean loose) {
+        looseFilterMatching = loose;
+    }
+
+    public static boolean matchesFilter(ItemStack filter, ItemStack stack) {
+        if (looseFilterMatching && !filter.hasItemMeta())
+            return areBaseItemsIdentical(filter, stack);
+        return areItemsIdentical(filter, stack);
+    }
+
+    public static boolean doesItemPassLooseFilters(ItemStack stack, Set<ItemStack> inclusions, Set<ItemStack> exclusions) {
+
+        if(inclusions != null && inclusions.size() > 0) {
+            boolean matched = false;
+            for (ItemStack fil : inclusions) {
+                if(!ItemUtil.isStackValid(fil))
+                    continue;
+                if(ItemUtil.matchesFilter(fil, stack)) {
+                    matched = true;
+                    break;
+                }
+            }
+            if(!matched)
+                return false;
+        }
+        if(exclusions != null && exclusions.size() > 0) {
+            for (ItemStack fil : exclusions) {
+                if(!ItemUtil.isStackValid(fil))
+                    continue;
+                if(ItemUtil.matchesFilter(fil, stack))
+                    return false;
+            }
+        }
+
+        return true;
+    }
+
+    public static List<ItemStack> filterItemsLoose(List<ItemStack> stacks, HashSet<ItemStack> inclusions, HashSet<ItemStack> exclusions) {
+
+        List<ItemStack> ret = new ArrayList<>();
+        for(ItemStack stack : stacks) {
+            if(doesItemPassLooseFilters(stack, inclusions, exclusions))
+                ret.add(stack);
+        }
+        return ret;
+    }
+
     public static boolean areItemsIdentical(ItemStack item, ItemStack item2) {
 
         if(!isStackValid(item) || !isStackValid(item2)) {
