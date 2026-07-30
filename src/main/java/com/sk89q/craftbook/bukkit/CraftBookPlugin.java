@@ -10,6 +10,11 @@ import com.sk89q.craftbook.core.LanguageManager;
 import com.sk89q.craftbook.core.st.MechanicClock;
 import com.sk89q.craftbook.core.st.SelfTriggeringManager;
 import com.sk89q.craftbook.mechanics.AIMechanic;
+import com.sk89q.craftbook.mechanics.ic.gates.world.miscellaneous.PipeAllDebugListener;
+import com.sk89q.craftbook.mechanics.ic.gates.world.miscellaneous.PipeLinkBindListener;
+import com.sk89q.craftbook.mechanics.ic.gates.world.miscellaneous.PipeLinkBreakListener;
+import com.sk89q.craftbook.mechanics.ic.gates.world.miscellaneous.PipeLinkIndex;
+import com.sk89q.craftbook.mechanics.ic.gates.world.miscellaneous.PipeLinkRouter;
 import com.sk89q.craftbook.mechanics.Ammeter;
 import com.sk89q.craftbook.mechanics.BetterLeads;
 import com.sk89q.craftbook.mechanics.BetterPhysics;
@@ -448,6 +453,17 @@ public class CraftBookPlugin extends JavaPlugin {
         setupCraftBook();
         registerGlobalEvents();
 
+        // PipeLink (MC1281/MC1282) support. Routing is driven by an in-memory index of
+        // link signs, so these are effectively free until someone builds the ICs.
+        getServer().getPluginManager().registerEvents(PipeLinkIndex.get(), this);
+        getServer().getPluginManager().registerEvents(PipeLinkRouter.get(), this);
+        getServer().getPluginManager().registerEvents(new PipeLinkBindListener(), this);
+        getServer().getPluginManager().registerEvents(new PipeLinkBreakListener(), this);
+        if (isDebugFlagEnabled("pipes")) {
+            getServer().getPluginManager().registerEvents(new PipeAllDebugListener(), this);
+        }
+        PipeLinkIndex.get().scanAllLoadedChunks();
+
         getServer().getPluginManager().registerEvents(new Listener() {
 
             /* Bukkit Bug Fixes */
@@ -752,6 +768,8 @@ public class CraftBookPlugin extends JavaPlugin {
 
         if(uuidMappings != null)
             uuidMappings.disable();
+
+        PipeLinkIndex.get().cleanup();
     }
 
     /**

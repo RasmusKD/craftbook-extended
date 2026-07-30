@@ -405,6 +405,8 @@ public class ICManager {
         registerIC("MC1278", "sentry gun", new SentryGun.Factory(server), familySISO, familyAISO); //Restricted
         registerIC("MC1279", "player trap",new PlayerTrap.Factory(server), familySISO, familyAISO);
         registerIC("MC1280", "animal brd", new AnimalBreeder.Factory(server), familySISO, familyAISO);
+        registerIC("MC1281", "pipelink recv", new PipeLinkReceiver.Factory(server), familySISO, familyAISO);
+        registerIC("MC1282", "pipelink send", new PipeLinkSender.Factory(server), familySISO, familyAISO);
         registerIC("MC1420", "divide clock", new ClockDivider.Factory(server), familySISO, familyAISO);
         registerIC("MC1421", "clock", new Clock.Factory(server), familySISO, familyAISO);
         registerIC("MC1422", "monostable", new Monostable.Factory(server), familySISO, familyAISO);

@@ -58,6 +58,10 @@ allprojects {
         withSourcesJar()
     }
 
+    tasks.withType(JavaCompile).configureEach {
+        options.encoding = 'UTF-8'
+    }
+
     tasks.test {
         // FIXME: Obviously, this isn't what we want
         enabled = false
@@ -93,12 +97,16 @@ allprojects {
     }
 
     dependencies {
-        compileOnly 'org.spigotmc:spigot-api:1.21.5-R0.1-SNAPSHOT'
+        compileOnly 'io.papermc.paper:paper-api:1.21.5-R0.1-SNAPSHOT'
+        // paper-api no longer exposes legacy commons-lang transitively; the server still ships it.
+        compileOnly 'commons-lang:commons-lang:2.6'
         compileOnly 'com.sk89q.worldedit:worldedit-core:7.3.12-SNAPSHOT'
         compileOnly 'com.sk89q.worldedit:worldedit-bukkit:7.3.12-SNAPSHOT'
         compileOnly 'com.sk89q.worldguard:worldguard-core:7.0.14-SNAPSHOT'
         compileOnly 'com.sk89q.worldguard:worldguard-bukkit:7.0.14-SNAPSHOT'
-        compileOnly 'com.github.MilkBowl:VaultAPI:1.7'
+        compileOnly ('com.github.MilkBowl:VaultAPI:1.7') {
+            exclude group: 'org.bukkit', module: 'bukkit'
+        }
         compileOnly 'net.dmulloy2:ProtocolLib:5.4.0'
         compileOnly 'fr.neatmonster:nocheatplus:3.15.1-RC'
 
