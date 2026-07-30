@@ -43,6 +43,14 @@ public class PipeLinkRouter implements Listener {
     /** Last candidate index that accepted items, per receiver, so steady-state transfers probe once. */
     private final Map<UUID, Integer> lastGoodCandidate = new ConcurrentHashMap<>();
 
+    /**
+     * Receivers whose network refused everything (typically a full container) are put on a
+     * short cooldown, so a clocked sender does not re-traverse the receiver's whole pipe
+     * network several times per pulse while it is blocked.
+     */
+    private static final long RETRY_COOLDOWN_MILLIS = 1000L;
+    private final Map<UUID, Long> deliveryBackoff = new ConcurrentHashMap<>();
+
     /* Event routing -------------------------------------------------------------------- */
 
     @EventHandler(ignoreCancelled = true)
@@ -120,6 +128,13 @@ public class PipeLinkRouter implements Listener {
      * items if anything was accepted, or null if nothing was (caller keeps its items).
      */
     List<ItemStack> sendThroughLink(Block senderSignBlock, UUID receiverId, List<ItemStack> items, Set<String> existingTeleports) {
+        Long blockedUntil = deliveryBackoff.get(receiverId);
+        if (blockedUntil != null) {
+            if (System.currentTimeMillis() < blockedUntil)
+                return null;
+            deliveryBackoff.remove(receiverId);
+        }
+
         PipeLinkIndex index = PipeLinkIndex.get();
         Block recvSign = index.getReceiverSignBlock(receiverId);
         if (recvSign == null)
@@ -165,6 +180,7 @@ public class PipeLinkRouter implements Listener {
                     return result;
                 }
             }
+            deliveryBackoff.put(receiverId, System.currentTimeMillis() + RETRY_COOLDOWN_MILLIS);
             return null;
         } finally {
             chainDepth--;

@@ -474,10 +474,13 @@ public class Pipes extends AbstractCraftBookMechanic {
 
         List<ItemStack> filteredItems = new ArrayList<>(VerifyUtil.withoutNulls(ItemUtil.filterItems(items, signFilters.filters, signFilters.exceptions)));
 
-        PipeFilterEvent filterEvent = new PipeFilterEvent(bl, items, new HashSet<>(signFilters.filters), new HashSet<>(signFilters.exceptions), filteredItems);
-        Bukkit.getPluginManager().callEvent(filterEvent);
+        // Skip the event (and the defensive set copies) entirely when nothing listens.
+        if (PipeFilterEvent.getHandlerList().getRegisteredListeners().length > 0) {
+            PipeFilterEvent filterEvent = new PipeFilterEvent(bl, items, new HashSet<>(signFilters.filters), new HashSet<>(signFilters.exceptions), filteredItems);
+            Bukkit.getPluginManager().callEvent(filterEvent);
 
-        filteredItems = filterEvent.getFilteredItems();
+            filteredItems = filterEvent.getFilteredItems();
+        }
 
         if(filteredItems.isEmpty())
             return runPassThrough;
@@ -694,10 +697,11 @@ public class Pipes extends AbstractCraftBookMechanic {
                 leftovers.addAll(items);
             }
 
-            PipeFinishEvent fEvent = new PipeFinishEvent(block, leftovers, fac, request);
-            Bukkit.getPluginManager().callEvent(fEvent);
-
-            leftovers = fEvent.getItems();
+            if (PipeFinishEvent.getHandlerList().getRegisteredListeners().length > 0) {
+                PipeFinishEvent fEvent = new PipeFinishEvent(block, leftovers, fac, request);
+                Bukkit.getPluginManager().callEvent(fEvent);
+                leftovers = fEvent.getItems();
+            }
             items.clear();
 
             if (!leftovers.isEmpty()) {
@@ -719,9 +723,11 @@ public class Pipes extends AbstractCraftBookMechanic {
             }
 
             List<ItemStack> leftovers = new ArrayList<>(items);
-            PipeFinishEvent fEvent = new PipeFinishEvent(block, leftovers, block, true);
-            Bukkit.getPluginManager().callEvent(fEvent);
-            leftovers = fEvent.getItems();
+            if (PipeFinishEvent.getHandlerList().getRegisteredListeners().length > 0) {
+                PipeFinishEvent fEvent = new PipeFinishEvent(block, leftovers, block, true);
+                Bukkit.getPluginManager().callEvent(fEvent);
+                leftovers = fEvent.getItems();
+            }
             items.clear();
 
             if (!leftovers.isEmpty()) {
