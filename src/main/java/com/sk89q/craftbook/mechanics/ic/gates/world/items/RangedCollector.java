@@ -17,6 +17,7 @@ import com.sk89q.craftbook.util.LocationUtil;
 import com.sk89q.craftbook.util.RegexUtil;
 import com.sk89q.craftbook.util.SignUtil;
 import com.sk89q.worldedit.math.Vector3;
+import io.papermc.lib.PaperLib;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Server;
@@ -107,36 +108,48 @@ public class RangedCollector extends AbstractSelfTriggeredIC {
 
         List<Item> itemsForChest = Lists.newArrayList();
 
-        for (Entity entity : LocationUtil.getNearbyEntities(centre, radius)) {
-            if (entity.isValid() && entity instanceof Item && ((Item) entity).getPickupDelay() < 1) {
-                ItemStack stack = ((Item) entity).getItemStack();
+        // The event has no registered listeners in the common case; only pay for it
+        // (and the per-item sign lookup) when something actually listens.
+        boolean fireEvents = RangedCollectEvent.getHandlerList().getRegisteredListeners().length > 0;
+        Block pipe = null;
+        if (fireEvents) {
+            org.bukkit.block.Sign signState = CraftBookBukkitUtil.toSign(getSign());
+            if (signState == null)
+                fireEvents = false;
+            else
+                pipe = getBackBlock().getRelative(SignUtil.getBack(signState.getBlock()));
+        }
 
-                if(!ItemUtil.isStackValid(stack))
-                    return false;
+        // Precise spatial lookup instead of scanning full entity arrays of 9 chunks.
+        // The predicate keeps the original radius semantics (spherical when symmetric).
+        for (Item entity : centre.getWorld().<Item>getNearbyEntitiesByType(Item.class, centre, radius.x(), radius.y(), radius.z(),
+                e -> e.isValid() && e.getPickupDelay() < 1 && LocationUtil.isWithinRadius(centre, e.getLocation(), radius))) {
+            ItemStack stack = entity.getItemStack();
 
-                boolean passed = filters.isEmpty() || !include;
+            if(!ItemUtil.isStackValid(stack))
+                return false;
 
-                for(ItemStack filter : filters) {
-                    if(!ItemUtil.isStackValid(filter))
-                        continue;
+            boolean passed = filters.isEmpty() || !include;
 
-                    if(include && ItemUtil.areItemsIdentical(filter, stack)) {
-                        passed = true;
-                        break;
-                    } else if(!include && ItemUtil.areItemsIdentical(filter, stack)) {
-                        passed = false;
-                        break;
-                    }
-                }
-
-                if (!passed) {
+            for(ItemStack filter : filters) {
+                if(!ItemUtil.isStackValid(filter))
                     continue;
+
+                if(include && ItemUtil.areItemsIdentical(filter, stack)) {
+                    passed = true;
+                    break;
+                } else if(!include && ItemUtil.areItemsIdentical(filter, stack)) {
+                    passed = false;
+                    break;
                 }
+            }
 
-                BlockFace back = SignUtil.getBack(CraftBookBukkitUtil.toSign(getSign()).getBlock());
-                Block pipe = getBackBlock().getRelative(back);
+            if (!passed) {
+                continue;
+            }
 
-                RangedCollectEvent event = new RangedCollectEvent(pipe, (Item) entity, new ArrayList<>(Collections.singletonList(stack)), getBackBlock());
+            if (fireEvents) {
+                RangedCollectEvent event = new RangedCollectEvent(pipe, entity, new ArrayList<>(Collections.singletonList(stack)), getBackBlock());
                 Bukkit.getPluginManager().callEvent(event);
 
                 if (event.isCancelled()) {
@@ -147,16 +160,16 @@ public class RangedCollector extends AbstractSelfTriggeredIC {
                     entity.remove();
                     return true;
                 }
-
-                itemsForChest.add((Item) entity);
             }
+
+            itemsForChest.add(entity);
         }
 
         if (!itemsForChest.isEmpty()) {
             if(!InventoryUtil.doesBlockHaveInventory(chest))
                 return false;
 
-            InventoryHolder chestState = (InventoryHolder) chest.getState();
+            InventoryHolder chestState = (InventoryHolder) PaperLib.getBlockState(chest, false).getState();
 
             // Add the items to a container, and destroy them.
             for (Item entity : itemsForChest) {

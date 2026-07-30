@@ -810,6 +810,9 @@ public class Pipes extends AbstractCraftBookMechanic {
         pipeTraversalCache = config.getBoolean(path + "traversal-cache", true);
         typeCache.clear();
 
+        config.setComment(path + "link-protection", "GriefPrevention trust required to bind PipeLink senders and receivers inside a claim: none, access, container, build or permission. Claim owners can always bind; unclaimed land is always allowed. Ignored when GriefPrevention is not installed.");
+        com.sk89q.craftbook.mechanics.ic.gates.world.miscellaneous.PipeLinkProtection.setLevel(config.getString(path + "link-protection", "permission"));
+
         config.setComment(path + "pass-through", "Make every pipe run pass-through: items that match no filter continue past filtered pistons and droppers instead of stopping there. The same can be enabled per run by writing 'pass', 'bypass' or 'b' on the first line of the starting sticky piston's [Pipe] sign. On an output piston or dropper's own sign, the marker instead makes that block a plain conduit items always flow through untouched.");
         pipePassThrough = config.getBoolean(path + "pass-through", false);
     }

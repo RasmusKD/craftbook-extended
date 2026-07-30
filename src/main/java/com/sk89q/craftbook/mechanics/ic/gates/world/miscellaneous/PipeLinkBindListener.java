@@ -80,6 +80,10 @@ public class PipeLinkBindListener implements Listener {
                 p.sendMessage(ChatColor.RED + "[Pipes] Klik først et Receiver-skilt ([MC1281]/PIPELINK_RECEIVER) med Blaze Rod.");
                 return;
             }
+            if (!PipeLinkProtection.mayLink(p, clicked.getBlock())) {
+                p.sendMessage(ChatColor.RED + "[Pipes] Du mangler trust i dette claim til at linke pipes.");
+                return;
+            }
             UUID rid = PipeLink.readReceiverUUID(clicked);
             if (rid == null) {
                 rid = UUID.randomUUID();
@@ -102,6 +106,16 @@ public class PipeLinkBindListener implements Listener {
     }
 
     private void doBind(Player p, Sign senderSign, UUID rid) {
+        if (!PipeLinkProtection.mayLink(p, senderSign.getBlock())) {
+            p.sendMessage(ChatColor.RED + "[Pipes] Du mangler trust i dette claim til at linke pipes.");
+            return;
+        }
+        Block recvBlock = PipeLinkIndex.get().getReceiverSignBlock(rid);
+        if (recvBlock != null && !PipeLinkProtection.mayLink(p, recvBlock)) {
+            p.sendMessage(ChatColor.RED + "[Pipes] Du mangler trust i receiverens claim til at linke til den.");
+            return;
+        }
+
         PipeLink.writeBoundReceiverUUID(senderSign, rid);
         PipeLinkIndex.get().bindSender(senderSign.getWorld().getUID(), senderSign.getX(), senderSign.getY(), senderSign.getZ(), rid);
 

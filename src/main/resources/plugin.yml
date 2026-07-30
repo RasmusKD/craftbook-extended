@@ -3,6 +3,6 @@ main: com.sk89q.craftbook.bukkit.CraftBookPlugin
 version: "${internalVersion}"
 dev-url: https://dev.bukkit.org/projects/craftbook
 depend: [WorldEdit]
-softdepend: [WorldGuard, ProtocolLib, Vault]
+softdepend: [WorldGuard, ProtocolLib, Vault, GriefPrevention]
 api-version: 1.21.5
 commands:

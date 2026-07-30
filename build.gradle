@@ -107,6 +107,9 @@ allprojects {
         compileOnly ('com.github.MilkBowl:VaultAPI:1.7') {
             exclude group: 'org.bukkit', module: 'bukkit'
         }
+        compileOnly ('com.github.GriefPrevention:GriefPrevention:16.18.4') {
+            transitive = false
+        }
         compileOnly 'net.dmulloy2:ProtocolLib:5.4.0'
         compileOnly 'fr.neatmonster:nocheatplus:3.15.1-RC'
 
