@@ -80,6 +80,37 @@ public final class PipeLinkProtection {
         return claim.getOwnerName();
     }
 
+    private static volatile boolean protectPulls = true;
+
+    public static void setProtectPulls(boolean protect) {
+        protectPulls = protect;
+    }
+
+    /**
+     * Whether a pipe may pull items out of this container. Containers inside a claim can
+     * only be pulled by pistons standing in a claim with the same owner, closing the
+     * grief vector where a piston just outside a claim border empties a chest inside it
+     * (vanilla hoppers cannot pull sideways, so GriefPrevention has no rule for this).
+     */
+    public static boolean mayPipePull(Block piston, Block container) {
+        if (!protectPulls)
+            return true;
+        Plugin gp = Bukkit.getPluginManager().getPlugin("GriefPrevention");
+        if (gp == null || !gp.isEnabled())
+            return true;
+        return checkPullClaims(piston, container);
+    }
+
+    private static boolean checkPullClaims(Block piston, Block container) {
+        Claim containerClaim = GriefPrevention.instance.dataStore.getClaimAt(container.getLocation(), false, null);
+        if (containerClaim == null)
+            return true;
+        Claim pistonClaim = GriefPrevention.instance.dataStore.getClaimAt(piston.getLocation(), false, null);
+        if (pistonClaim == null)
+            return false;
+        return java.util.Objects.equals(containerClaim.getOwnerID(), pistonClaim.getOwnerID());
+    }
+
     /** The GP trust command matching the configured level, for player-facing messages. */
     public static String requiredTrustName() {
         return switch (level) {

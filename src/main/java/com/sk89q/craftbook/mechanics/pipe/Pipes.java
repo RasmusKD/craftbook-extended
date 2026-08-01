@@ -584,6 +584,10 @@ public class Pipes extends AbstractCraftBookMechanic {
             Block fac = block.getRelative(p.getFacing());
             Material facType = fac.getType();
 
+            // Never pull out of containers inside someone else's claim.
+            if (!com.sk89q.craftbook.mechanics.ic.gates.world.miscellaneous.PipeLinkProtection.mayPipePull(block, fac))
+                return;
+
             if (facType == Material.CHEST
                     || facType == Material.TRAPPED_CHEST
                     || facType == Material.DROPPER
@@ -812,6 +816,9 @@ public class Pipes extends AbstractCraftBookMechanic {
 
         config.setComment(path + "filters-match-type", "When a pipe or collector filter entry has no item meta, match by item type alone so potions, enchanted books and renamed items are caught by plain filters instead of passing through. Disable for strict vanilla meta matching.");
         com.sk89q.craftbook.util.ItemUtil.setLooseFilterMatching(config.getBoolean(path + "filters-match-type", true));
+
+        config.setComment(path + "claim-protect-pulls", "Stop pipes pulling items out of containers inside a GriefPrevention claim unless the pulling piston stands in a claim with the same owner. Closes a theft vector vanilla hoppers don't have. Ignored when GriefPrevention is not installed.");
+        com.sk89q.craftbook.mechanics.ic.gates.world.miscellaneous.PipeLinkProtection.setProtectPulls(config.getBoolean(path + "claim-protect-pulls", true));
 
         config.setComment(path + "link-protection", "GriefPrevention trust required to bind PipeLink senders and receivers inside a claim: none, access, container, build or permission. Claim owners can always bind; unclaimed land is always allowed. Ignored when GriefPrevention is not installed.");
         com.sk89q.craftbook.mechanics.ic.gates.world.miscellaneous.PipeLinkProtection.setLevel(config.getString(path + "link-protection", "permission"));
