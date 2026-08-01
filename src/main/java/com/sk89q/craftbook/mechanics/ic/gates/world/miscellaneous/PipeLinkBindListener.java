@@ -83,8 +83,9 @@ public class PipeLinkBindListener implements Listener {
                 p.sendMessage(ChatColor.RED + "[Pipes] Klik først et Receiver-skilt ([MC1281]/PIPELINK_RECEIVER) med Blaze Rod.");
                 return;
             }
-            if (!PipeLinkProtection.mayLink(p, clicked.getBlock())) {
-                p.sendMessage(ChatColor.RED + "[Pipes] Du mangler trust i dette claim til at linke pipes.");
+            String denial = PipeLinkProtection.describeDenial(p, clicked.getBlock());
+            if (denial != null) {
+                p.sendMessage(ChatColor.RED + "[Pipes] Du mangler trust i " + denial + "s claim til at linke pipes (kræver /" + PipeLinkProtection.requiredTrustName() + ").");
                 return;
             }
             UUID rid = PipeLink.readReceiverUUID(clicked);
@@ -109,14 +110,18 @@ public class PipeLinkBindListener implements Listener {
     }
 
     private void doBind(Player p, Sign senderSign, UUID rid) {
-        if (!PipeLinkProtection.mayLink(p, senderSign.getBlock())) {
-            p.sendMessage(ChatColor.RED + "[Pipes] Du mangler trust i dette claim til at linke pipes.");
+        String senderDenial = PipeLinkProtection.describeDenial(p, senderSign.getBlock());
+        if (senderDenial != null) {
+            p.sendMessage(ChatColor.RED + "[Pipes] Du mangler trust i " + senderDenial + "s claim til at linke pipes (kræver /" + PipeLinkProtection.requiredTrustName() + ").");
             return;
         }
         Block recvBlock = PipeLinkIndex.get().getReceiverSignBlock(rid);
-        if (recvBlock != null && !PipeLinkProtection.mayLink(p, recvBlock)) {
-            p.sendMessage(ChatColor.RED + "[Pipes] Du mangler trust i receiverens claim til at linke til den.");
-            return;
+        if (recvBlock != null) {
+            String recvDenial = PipeLinkProtection.describeDenial(p, recvBlock);
+            if (recvDenial != null) {
+                p.sendMessage(ChatColor.RED + "[Pipes] Du mangler trust i " + recvDenial + "s claim (receiverens) til at linke til den (kræver /" + PipeLinkProtection.requiredTrustName() + ").");
+                return;
+            }
         }
 
         PipeLink.writeBoundReceiverUUID(senderSign, rid);

@@ -46,20 +46,28 @@ public final class PipeLinkProtection {
 
     /** Whether this player may create or modify a PipeLink binding at this sign block. */
     public static boolean mayLink(Player player, Block signBlock) {
+        return describeDenial(player, signBlock) == null;
+    }
+
+    /**
+     * Returns null if the player may bind at this sign block, otherwise a short
+     * description of the denying claim (owner name) for use in the player message.
+     */
+    public static String describeDenial(Player player, Block signBlock) {
         if (level == Level.NONE)
-            return true;
+            return null;
         Plugin gp = Bukkit.getPluginManager().getPlugin("GriefPrevention");
         if (gp == null || !gp.isEnabled())
-            return true;
+            return null;
         return checkGriefPrevention(player, signBlock);
     }
 
     // Kept in its own method so GriefPrevention classes are only ever loaded when the
     // plugin is actually present.
-    private static boolean checkGriefPrevention(Player player, Block block) {
+    private static String checkGriefPrevention(Player player, Block block) {
         Claim claim = GriefPrevention.instance.dataStore.getClaimAt(block.getLocation(), false, null);
         if (claim == null)
-            return true;
+            return null;
 
         ClaimPermission required = switch (level) {
             case ACCESS -> ClaimPermission.Access;
@@ -67,6 +75,18 @@ public final class PipeLinkProtection {
             case BUILD -> ClaimPermission.Build;
             default -> ClaimPermission.Manage;
         };
-        return claim.checkPermission(player, required, null) == null;
+        if (claim.checkPermission(player, required, null) == null)
+            return null;
+        return claim.getOwnerName();
+    }
+
+    /** The GP trust command matching the configured level, for player-facing messages. */
+    public static String requiredTrustName() {
+        return switch (level) {
+            case ACCESS -> "accesstrust";
+            case CONTAINER -> "containertrust";
+            case BUILD -> "trust";
+            default -> "permissiontrust";
+        };
     }
 }
