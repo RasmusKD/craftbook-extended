@@ -42,7 +42,10 @@ public class PipeLinkBindListener implements Listener {
     private final Map<UUID, UUID> awaitingBind = new ConcurrentHashMap<>();
     private final Map<UUID, UUID> lastReceiver = new ConcurrentHashMap<>();
 
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    // Runs first and does not respect prior cancellation: other plugins (and air-click
+    // events, which Bukkit fires pre-cancelled) would otherwise silently eat the click.
+    // Claim safety is handled by our own PipeLinkProtection check.
+    @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = false)
     public void onInteract(PlayerInteractEvent e) {
         if (e.getHand() != EquipmentSlot.HAND)
             return;
