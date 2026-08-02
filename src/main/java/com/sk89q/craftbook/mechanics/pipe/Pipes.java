@@ -264,6 +264,7 @@ public class Pipes extends AbstractCraftBookMechanic {
         wt.pullCursor.remove(key);
         wt.fullBackoff.remove(key);
         wt.smokeAt.remove(key);
+        wt.blockedPistons.remove(key);
     }
 
     private void invalidateFilterCacheAround(Block center) {
@@ -389,6 +390,8 @@ public class Pipes extends AbstractCraftBookMechanic {
         final Long2IntOpenHashMap pullCursor = new Long2IntOpenHashMap();
         final Long2LongOpenHashMap fullBackoff = new Long2LongOpenHashMap();
         final Long2LongOpenHashMap smokeAt = new Long2LongOpenHashMap();
+        /** Pistons whose last completed pull was a total failure; kept smoking by the task. */
+        final LongOpenHashSet blockedPistons = new LongOpenHashSet();
         long clearedAt = System.currentTimeMillis();
 
         WorldTypes() {
@@ -706,6 +709,58 @@ public class Pipes extends AbstractCraftBookMechanic {
                 + " (reported once per block; further occurrences here are silent)");
     }
 
+    private org.bukkit.scheduler.BukkitTask smokeTask;
+
+    @Override
+    public boolean enable() {
+        smokeTask = Bukkit.getScheduler().runTaskTimer(CraftBookPlugin.inst(), this::smokeBlockedPistons, 12L, 12L);
+        return true;
+    }
+
+    @Override
+    public void disable() {
+        if (smokeTask != null) {
+            smokeTask.cancel();
+            smokeTask = null;
+        }
+        typeCache.clear();
+    }
+
+    /**
+     * Keeps every blocked piston visibly smoking between pulses. The flag is state, set
+     * on a totally failed pull and cleared by the next successful one, so a player can
+     * find a defective system by looking at it, not only by watching a pulse happen.
+     */
+    private void smokeBlockedPistons() {
+        if (!pipeFullSmoke)
+            return;
+        for (Map.Entry<UUID, WorldTypes> entry : typeCache.entrySet()) {
+            WorldTypes wt = entry.getValue();
+            if (wt.blockedPistons.isEmpty())
+                continue;
+            World world = Bukkit.getWorld(entry.getKey());
+            if (world == null)
+                continue;
+            it.unimi.dsi.fastutil.longs.LongIterator iter = wt.blockedPistons.iterator();
+            while (iter.hasNext()) {
+                long key = iter.nextLong();
+                int x = unpackX(key), y = unpackY(key), z = unpackZ(key);
+                if (!world.isChunkLoaded(x >> 4, z >> 4))
+                    continue;
+                if (world.getBlockAt(x, y, z).getType() != Material.STICKY_PISTON) {
+                    iter.remove();
+                    continue;
+                }
+                world.spawnParticle(org.bukkit.Particle.LARGE_SMOKE,
+                        x + 0.5, y + 1.2, z + 0.5, 4, 0.15, 0.1, 0.15, 0.01);
+            }
+        }
+    }
+
+    private static int unpackX(long key) { return (int) (key >> 38); }
+    private static int unpackZ(long key) { return (int) (key << 26 >> 38); }
+    private static int unpackY(long key) { return (int) (key << 52 >> 52); }
+
     /**
      * A visible signal on a paused piston: black smoke rising while pulses arrive and
      * the network is refusing items. With links and cross-dimension receivers the
@@ -842,9 +897,18 @@ public class Pipes extends AbstractCraftBookMechanic {
                     for (ItemStack left : items)
                         if (left != null)
                             undelivered += left.getAmount();
-                    if (pipeFullCooldownMillis > 0 && pulledAmount > 0 && undelivered >= pulledAmount)
-                        caches(block.getWorld()).fullBackoff.put(posKey(block), System.currentTimeMillis() + pipeFullCooldownMillis);
+                    if (pipeFullCooldownMillis > 0 && pulledAmount > 0 && undelivered >= pulledAmount) {
+                        WorldTypes wt = caches(block.getWorld());
+                        long pistonKey = posKey(block);
+                        wt.fullBackoff.put(pistonKey, System.currentTimeMillis() + pipeFullCooldownMillis);
+                        // Blocked is a STATE, not an event: the flag keeps the piston
+                        // smoking between pulses via the repeating task, until a pull
+                        // succeeds again. A puff only at pulse time is missable.
+                        wt.blockedPistons.add(pistonKey);
                         spawnPauseSmoke(block);
+                    } else {
+                        caches(block.getWorld()).blockedPistons.remove(posKey(block));
+                    }
 
                     if (facType == Material.CRAFTER)
                         leftovers.addAll(InventoryUtil.addItemsToCrafter((Crafter) PaperLib.getBlockState(fac, false).getState(), items.toArray(new ItemStack[items.size()])));
@@ -854,6 +918,9 @@ public class Pipes extends AbstractCraftBookMechanic {
                             leftovers.addAll(sourceHolder.getInventory().addItem(item).values());
                         }
                     }
+                } else {
+                    // Everything delivered (or nothing to pull): the piston is not blocked.
+                    caches(block.getWorld()).blockedPistons.remove(posKey(block));
                 }
             } else if (facType == Material.FURNACE || facType == Material.BLAST_FURNACE || facType == Material.SMOKER) {
 
