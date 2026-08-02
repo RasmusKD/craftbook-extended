@@ -44,6 +44,15 @@ public class PipeLinkRouter implements Listener {
     private final Map<UUID, Integer> lastGoodCandidate = new ConcurrentHashMap<>();
 
     /**
+     * Drops the per-receiver caches for a retired receiver id. Without this, every
+     * receiver sign ever broken leaves its UUID in these maps for the process lifetime.
+     */
+    void forgetReceiver(UUID rid) {
+        lastGoodCandidate.remove(rid);
+        deliveryBackoff.remove(rid);
+    }
+
+    /**
      * Receivers whose network refused everything (typically a full container) are put on a
      * short cooldown, so a clocked sender does not re-traverse the receiver's whole pipe
      * network several times per pulse while it is blocked.
@@ -214,6 +223,7 @@ public class PipeLinkRouter implements Listener {
     /** Fires one injection probe. Returns the leftovers if anything was accepted, else null. */
     private static List<ItemStack> tryCandidate(Block start, Block attached, List<ItemStack> items, String key, Set<String> existingTeleports) {
         List<ItemStack> probe = cloneStacks(items);
+        int before = totalAmount(probe);
         PipeRequestEvent req = new PipeRequestEvent(start, probe, attached, true, 1);
         req.markTeleportUsed(key);
         if (existingTeleports != null) {
@@ -221,7 +231,19 @@ public class PipeLinkRouter implements Listener {
                 req.markTeleportUsed(used);
         }
         Bukkit.getPluginManager().callEvent(req);
-        return req.getItems().size() < items.size() ? req.getItems() : null;
+        // Compare item quantities, not stack counts: a partial fill leaves the list the
+        // same length with a reduced amount, and missing it here would re-probe the next
+        // candidate with a full fresh clone - duplicating what was already delivered.
+        return totalAmount(req.getItems()) < before ? req.getItems() : null;
+    }
+
+    private static int totalAmount(List<ItemStack> stacks) {
+        int total = 0;
+        for (ItemStack s : stacks) {
+            if (s != null)
+                total += s.getAmount();
+        }
+        return total;
     }
 
     private static List<Block> buildCandidates(Block attached, BlockFace backFace) {

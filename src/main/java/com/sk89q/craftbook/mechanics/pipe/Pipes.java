@@ -265,6 +265,10 @@ public class Pipes extends AbstractCraftBookMechanic {
     public void onBlockBreak(BlockBreakEvent event) {
         invalidateFilterCacheAround(event.getBlock().getLocation());
         invalidateTypeCacheAt(event.getBlock());
+        // A new piston at the same spot must not inherit the old one's round-robin
+        // cursor or pause window; removing absent keys is a no-op.
+        pullCursor.remove(event.getBlock().getLocation());
+        fullBackoff.remove(event.getBlock().getLocation());
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
@@ -418,6 +422,9 @@ public class Pipes extends AbstractCraftBookMechanic {
                         expandNeighbour(bl, blType, d[0], d[1], d[2], visitedPipes, searchQueue);
                     }
                 } else {
+                    // Mark the current block visited first, or the (0,0,0) offset below
+                    // re-queues it and the whole 27-neighbour pass runs twice.
+                    visitedPipes.add(posKey(bl));
                     //Enumerate the search queue.
                     for (int x = -1; x < 2; x++) {
                         for (int y = -1; y < 2; y++) {

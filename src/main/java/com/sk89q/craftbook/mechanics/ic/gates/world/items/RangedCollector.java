@@ -139,8 +139,10 @@ public class RangedCollector extends AbstractSelfTriggeredIC {
                 e -> e.isValid() && e.getPickupDelay() < 1 && LocationUtil.isWithinRadius(centre, e.getLocation(), radius))) {
             ItemStack stack = entity.getItemStack();
 
+            // Skip only this entity - a return here would abort the whole radius pass
+            // and starve the collector while a single invalid item entity lingers.
             if(!ItemUtil.isStackValid(stack))
-                return false;
+                continue;
 
             boolean passed = filters.isEmpty() || !include;
 
@@ -173,6 +175,20 @@ public class RangedCollector extends AbstractSelfTriggeredIC {
                     entity.remove();
                     return true;
                 }
+
+                // Pipes may have consumed part of the stack already (the paused
+                // full-pipe branch inserts what fits into the source container), so
+                // trim the entity to what is still outstanding - otherwise the chest
+                // path below re-delivers the already-inserted portion.
+                int outstanding = 0;
+                for (ItemStack left : event.getItems())
+                    if (left != null)
+                        outstanding += left.getAmount();
+                if (outstanding < stack.getAmount()) {
+                    ItemStack trimmed = stack.clone();
+                    trimmed.setAmount(outstanding);
+                    entity.setItemStack(trimmed);
+                }
             }
 
             itemsForChest.add(entity);
@@ -191,12 +207,12 @@ public class RangedCollector extends AbstractSelfTriggeredIC {
                 List<ItemStack> leftovers = InventoryUtil.addItemsToInventory(chestState, false, stack);
                 if (leftovers.isEmpty()) {
                     entity.remove();
-                } else {
-                    if (ItemUtil.areItemsIdentical(leftovers.get(0), stack) && leftovers.get(0).getAmount() != stack.getAmount()) {
-                        entity.setItemStack(leftovers.get(0));
-                    }
+                    collected = true;
+                } else if (ItemUtil.areItemsIdentical(leftovers.get(0), stack) && leftovers.get(0).getAmount() != stack.getAmount()) {
+                    entity.setItemStack(leftovers.get(0));
+                    collected = true;
                 }
-                collected = true;
+                // A full container moves nothing; the IC must not signal a collection then.
             }
 
             //if (collected) {

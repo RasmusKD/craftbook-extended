@@ -98,6 +98,7 @@ public class PipeLinkIndex implements Listener {
             }
         }
         receivers.remove(rid);
+        PipeLinkRouter.get().forgetReceiver(rid);
     }
 
     public void bindSender(UUID world, int x, int y, int z, UUID rid) {
@@ -229,7 +230,12 @@ public class PipeLinkIndex implements Listener {
 
         receivers.entrySet().removeIf(e -> {
             ReceiverRef ref = e.getValue();
-            return ref.world().equals(world) && ref.x() >> 4 == cx && ref.z() >> 4 == cz;
+            if (!ref.world().equals(world) || ref.x() >> 4 != cx || ref.z() >> 4 != cz)
+                return false;
+            // Router caches repopulate on next use; dropping them here keeps them
+            // bounded by loaded receivers instead of lifetime receiver churn.
+            PipeLinkRouter.get().forgetReceiver(e.getKey());
+            return true;
         });
     }
 
