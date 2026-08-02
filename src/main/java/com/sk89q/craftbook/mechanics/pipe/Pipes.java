@@ -823,6 +823,9 @@ public class Pipes extends AbstractCraftBookMechanic {
         config.setComment(path + "link-world-blacklist", "Worlds where PipeLink may not bind or deliver at all (either endpoint). Useful to keep e.g. a creative world on the same server out of survival item flows. Empty by default.");
         com.sk89q.craftbook.mechanics.ic.gates.world.miscellaneous.PipeLinkProtection.setWorldBlacklist(config.getStringList(path + "link-world-blacklist", new java.util.ArrayList<>()));
 
+        config.setComment(path + "link-isolated-worlds", "Worlds that may only PipeLink within themselves: links inside the world work normally, but links crossing into or out of it are refused (existing ones lie dormant). Empty by default.");
+        com.sk89q.craftbook.mechanics.ic.gates.world.miscellaneous.PipeLinkProtection.setIsolatedWorlds(config.getStringList(path + "link-isolated-worlds", new java.util.ArrayList<>()));
+
         config.setComment(path + "link-cross-dimension", "Allow PipeLink senders and receivers to be linked across dimensions (overworld/nether/end). When disabled, new cross-dimension bindings are refused and existing ones lie dormant until re-enabled.");
         com.sk89q.craftbook.mechanics.ic.gates.world.miscellaneous.PipeLinkProtection.setAllowCrossDimension(config.getBoolean(path + "link-cross-dimension", true));
 

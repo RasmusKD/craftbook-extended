@@ -161,9 +161,8 @@ public class PipeLinkRouter implements Listener {
             return null;
         }
 
-        if (!PipeLinkProtection.isCrossDimensionAllowed()
-                && !senderSignBlock.getWorld().getUID().equals(recvSign.getWorld().getUID())) {
-            return null; // cross-dimension links lie dormant while disabled
+        if (!PipeLinkProtection.isCrossLinkAllowed(senderSignBlock.getWorld(), recvSign.getWorld())) {
+            return null; // cross-world links lie dormant while not permitted
         }
 
         if (!PipeLinkProtection.isWorldAllowed(senderSignBlock.getWorld()) || !PipeLinkProtection.isWorldAllowed(recvSign.getWorld())) {

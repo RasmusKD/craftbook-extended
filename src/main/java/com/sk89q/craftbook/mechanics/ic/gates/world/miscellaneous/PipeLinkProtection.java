@@ -98,6 +98,34 @@ public final class PipeLinkProtection {
         return worldBlacklist.isEmpty() || !worldBlacklist.contains(world.getName().toLowerCase(Locale.ROOT));
     }
 
+    private static volatile java.util.Set<String> isolatedWorlds = java.util.Set.of();
+
+    public static void setIsolatedWorlds(java.util.List<String> worlds) {
+        java.util.Set<String> set = new java.util.HashSet<>();
+        if (worlds != null) {
+            for (String w : worlds) {
+                if (w != null && !w.isBlank())
+                    set.add(w.trim().toLowerCase(Locale.ROOT));
+            }
+        }
+        isolatedWorlds = set;
+    }
+
+    /**
+     * Whether these two link endpoints may connect. Same world is always fine (subject to
+     * the blacklist elsewhere); across worlds both the cross-dimension switch and the
+     * isolated-worlds list apply - an isolated world links freely within itself but never
+     * with other worlds.
+     */
+    public static boolean isCrossLinkAllowed(org.bukkit.World a, org.bukkit.World b) {
+        if (a.getUID().equals(b.getUID()))
+            return true;
+        if (!allowCrossDimension)
+            return false;
+        return !isolatedWorlds.contains(a.getName().toLowerCase(Locale.ROOT))
+                && !isolatedWorlds.contains(b.getName().toLowerCase(Locale.ROOT));
+    }
+
     private static volatile boolean allowCrossDimension = true;
 
     public static void setAllowCrossDimension(boolean allow) {
