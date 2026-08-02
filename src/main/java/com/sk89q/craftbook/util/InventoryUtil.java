@@ -172,25 +172,53 @@ public class InventoryUtil {
      */
     public static List<ItemStack> addItemsToCrafter(Crafter crafter, ItemStack ... stacks) {
 
+        // Distribute one item at a time into the enabled slot holding the fewest matching
+        // items, exactly like vanilla hoppers feed crafters. Dumping whole stacks into the
+        // first free slot (the old behaviour) leaves the rest of the grid empty, so
+        // recipes needing multiple slots could never craft.
         List<ItemStack> leftovers = new ArrayList<>();
-        int[] availableSlots = IntStream.rangeClosed(0, crafter.getInventory().getSize() - 1).filter(slot -> !crafter.isSlotDisabled(slot)).toArray();
-        
-        for(ItemStack stack : stacks) {
-            Inventory inv = crafter.getInventory();
-            
-            for (int i : availableSlots) {
-                if (stack == null) {
+        Inventory inv = crafter.getInventory();
+        int size = inv.getSize();
+
+        for (ItemStack stack : stacks) {
+            if (stack == null) {
+                continue;
+            }
+            ItemStack remaining = stack.clone();
+            while (remaining.getAmount() > 0) {
+                int best = -1;
+                int bestCount = Integer.MAX_VALUE;
+                for (int i = 0; i < size; i++) {
+                    if (crafter.isSlotDisabled(i)) {
+                        continue;
+                    }
+                    ItemStack in = inv.getItem(i);
+                    if (in == null) {
+                        if (bestCount > 0) {
+                            best = i;
+                            bestCount = 0;
+                        }
+                    } else if (in.isSimilar(remaining) && in.getAmount() < in.getMaxStackSize() && in.getAmount() < bestCount) {
+                        best = i;
+                        bestCount = in.getAmount();
+                    }
+                }
+                if (best == -1) {
                     break;
                 }
-                if (inv.getItem(i) == null) {
-                    inv.setItem(i, stack);
-                    stack = null;
+                ItemStack in = inv.getItem(best);
+                if (in == null) {
+                    ItemStack one = remaining.clone();
+                    one.setAmount(1);
+                    inv.setItem(best, one);
                 } else {
-                    stack = ItemUtil.addToStack(inv.getItem(i), stack);
+                    in.setAmount(in.getAmount() + 1);
+                    inv.setItem(best, in);
                 }
+                remaining.setAmount(remaining.getAmount() - 1);
             }
-            if (stack != null) {
-                leftovers.add(stack);
+            if (remaining.getAmount() > 0) {
+                leftovers.add(remaining);
             }
         }
         return leftovers;
