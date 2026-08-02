@@ -126,6 +126,26 @@ public final class PipeLinkProtection {
                 && !isolatedWorlds.contains(b.getName().toLowerCase(Locale.ROOT));
     }
 
+    /**
+     * Returns null if these two link endpoints may connect, otherwise a player-facing
+     * reason naming what blocks the link (the global switch or the isolated world(s)).
+     */
+    public static String describeCrossLinkDenial(org.bukkit.World a, org.bukkit.World b) {
+        if (a.getUID().equals(b.getUID()))
+            return null;
+        if (!allowCrossDimension)
+            return "links på tværs af verdener er slået fra på serveren";
+        boolean aIsolated = isolatedWorlds.contains(a.getName().toLowerCase(Locale.ROOT));
+        boolean bIsolated = isolatedWorlds.contains(b.getName().toLowerCase(Locale.ROOT));
+        if (aIsolated && bIsolated)
+            return "både '" + a.getName() + "' og '" + b.getName() + "' er isolerede verdener";
+        if (aIsolated)
+            return "'" + a.getName() + "' er en isoleret verden";
+        if (bIsolated)
+            return "'" + b.getName() + "' er en isoleret verden";
+        return null;
+    }
+
     private static volatile boolean allowCrossDimension = true;
 
     public static void setAllowCrossDimension(boolean allow) {

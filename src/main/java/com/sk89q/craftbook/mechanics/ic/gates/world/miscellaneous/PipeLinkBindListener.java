@@ -120,9 +120,12 @@ public class PipeLinkBindListener implements Listener {
             return;
         }
         Block recvBlock = PipeLinkIndex.get().getReceiverSignBlock(rid);
-        if (recvBlock != null && !PipeLinkProtection.isCrossLinkAllowed(senderSign.getWorld(), recvBlock.getWorld())) {
-            p.sendMessage(ChatColor.RED + "[Pipes] Links på tværs af verdener er ikke tilladt her — du kan stadig linke inden for samme verden.");
-            return;
+        if (recvBlock != null) {
+            String crossDenial = PipeLinkProtection.describeCrossLinkDenial(senderSign.getWorld(), recvBlock.getWorld());
+            if (crossDenial != null) {
+                p.sendMessage(ChatColor.RED + "[Pipes] Kan ikke linke: " + crossDenial + " — du kan stadig linke inden for samme verden.");
+                return;
+            }
         }
         if (recvBlock != null) {
             String recvDenial = PipeLinkProtection.describeDenial(p, recvBlock);
