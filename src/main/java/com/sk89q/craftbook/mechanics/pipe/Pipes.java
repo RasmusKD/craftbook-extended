@@ -179,6 +179,9 @@ public class Pipes extends AbstractCraftBookMechanic {
     /** Last pulled slot per source piston, for round-robin pulling. */
     private final Map<Location, Integer> pullCursor = new ConcurrentHashMap<>();
 
+    /** Pistons paused after a pull where nothing could be delivered (full network). */
+    private final Map<Location, Long> fullBackoff = new ConcurrentHashMap<>();
+
     private CachedFilters getFilters(Block block) {
         if (!pipeFilterCache)
             return parseFilters(block);
@@ -276,6 +279,7 @@ public class Pipes extends AbstractCraftBookMechanic {
         World world = event.getWorld();
         filterCache.keySet().removeIf(loc -> world.equals(loc.getWorld()));
         pullCursor.keySet().removeIf(loc -> world.equals(loc.getWorld()));
+        fullBackoff.keySet().removeIf(loc -> world.equals(loc.getWorld()));
         typeCache.remove(world.getUID());
     }
 
@@ -592,6 +596,18 @@ public class Pipes extends AbstractCraftBookMechanic {
             if (!com.sk89q.craftbook.mechanics.ic.gates.world.miscellaneous.PipeLinkProtection.mayPipePull(block, fac))
                 return;
 
+            // A piston whose whole network refused the last pull is paused briefly, so a
+            // full pipe fed by e.g. a self-triggered collector stops re-traversing and
+            // vomiting items on every pulse.
+            if (pipeFullCooldownMillis > 0) {
+                Long pausedUntil = fullBackoff.get(block.getLocation());
+                if (pausedUntil != null) {
+                    if (System.currentTimeMillis() < pausedUntil)
+                        return;
+                    fullBackoff.remove(block.getLocation());
+                }
+            }
+
             if (facType == Material.CHEST
                     || facType == Material.TRAPPED_CHEST
                     || facType == Material.DROPPER
@@ -634,6 +650,11 @@ public class Pipes extends AbstractCraftBookMechanic {
                     }
                 }
 
+                int pulledAmount = 0;
+                for (ItemStack pulled : items)
+                    if (pulled != null)
+                        pulledAmount += pulled.getAmount();
+
                 PipeSuckEvent event = new PipeSuckEvent(block, new ArrayList<>(items), fac);
                 Bukkit.getPluginManager().callEvent(event);
                 items.clear();
@@ -644,6 +665,13 @@ public class Pipes extends AbstractCraftBookMechanic {
                 }
 
                 if (!items.isEmpty()) {
+                    int undelivered = 0;
+                    for (ItemStack left : items)
+                        if (left != null)
+                            undelivered += left.getAmount();
+                    if (pipeFullCooldownMillis > 0 && pulledAmount > 0 && undelivered >= pulledAmount)
+                        fullBackoff.put(block.getLocation(), System.currentTimeMillis() + pipeFullCooldownMillis);
+
                     if (facType == Material.CRAFTER)
                         leftovers.addAll(InventoryUtil.addItemsToCrafter((Crafter) fac.getState(), items.toArray(new ItemStack[items.size()])));
                     else {
@@ -807,6 +835,7 @@ public class Pipes extends AbstractCraftBookMechanic {
     private boolean pipeRequireSign;
     private boolean pipeFilterCache;
     private boolean pipeRoundRobinPull;
+    private int pipeFullCooldownMillis;
     private int pipeDropperDropLimit;
     private boolean pipePassThrough;
     private boolean pipeTraversalCache;
@@ -838,6 +867,9 @@ public class Pipes extends AbstractCraftBookMechanic {
 
         config.setComment(path + "filters-match-type", "When a pipe or collector filter entry has no item meta, match by item type alone so potions, enchanted books and renamed items are caught by plain filters instead of passing through. Disable for strict vanilla meta matching.");
         com.sk89q.craftbook.util.ItemUtil.setLooseFilterMatching(config.getBoolean(path + "filters-match-type", true));
+
+        config.setComment(path + "full-pipe-cooldown", "Seconds a sticky piston waits before pulling again after a pulse where nothing could be delivered anywhere (full network). Stops full pipes wasting full traversals and vomiting items every pulse. 0 disables.");
+        pipeFullCooldownMillis = config.getInt(path + "full-pipe-cooldown", 2) * 1000;
 
         config.setComment(path + "round-robin-pull", "Pull container slots in rotation instead of always taking the first stack, so one stack no output accepts cannot block everything behind it. Disable for strict vanilla first-stack behaviour.");
         pipeRoundRobinPull = config.getBoolean(path + "round-robin-pull", true);
