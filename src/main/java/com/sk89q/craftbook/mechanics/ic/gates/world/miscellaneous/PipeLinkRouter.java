@@ -249,14 +249,14 @@ public class PipeLinkRouter implements Listener {
 
             // Try the candidate that worked last time first; injection points rarely change.
             int preferred = lastGoodCandidate.getOrDefault(receiverId, -1);
-            if (preferred >= 0 && preferred < candidates.size()) {
+            if (preferred >= 0 && preferred < candidates.size() && candidates.get(preferred) != null) {
                 List<ItemStack> result = tryCandidate(candidates.get(preferred), attached, items, key, existingTeleports);
                 if (result != null)
                     return result;
             }
 
             for (int i = 0; i < candidates.size(); i++) {
-                if (i == preferred)
+                if (i == preferred || candidates.get(i) == null)
                     continue;
                 List<ItemStack> result = tryCandidate(candidates.get(i), attached, items, key, existingTeleports);
                 if (result != null) {
@@ -298,10 +298,14 @@ public class PipeLinkRouter implements Listener {
         return total;
     }
 
+    // Always five entries in a fixed order, so a remembered lastGoodCandidate index
+    // keeps meaning the same position. The list used to include `attached` only when it
+    // was a pipe segment, so placing or breaking glass at the receiver shifted every
+    // index by one and the cache silently started probing the wrong block first.
+    // A null entry marks a position that is not currently probeable.
     private static List<Block> buildCandidates(Block attached, BlockFace backFace) {
         List<Block> ordered = new ArrayList<>(5);
-        if (isPipeSegment(attached))
-            ordered.add(attached);
+        ordered.add(isPipeSegment(attached) ? attached : null);
         ordered.add(attached.getRelative(backFace));
         ordered.add(attached.getRelative(backFace, 2));
         ordered.add(attached.getRelative(rotateLeft(backFace)));
