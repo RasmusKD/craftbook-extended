@@ -51,6 +51,8 @@ import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
 
 import it.unimi.dsi.fastutil.longs.Long2ByteOpenHashMap;
+import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
+import it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 
@@ -74,7 +76,7 @@ public class Pipes extends AbstractCraftBookMechanic {
         if(!EventUtil.passesFilter(event)) return;
 
         // Any sign edit near a pipe may change its filters.
-        invalidateFilterCacheAround(event.getBlock().getLocation());
+        invalidateFilterCacheAround(event.getBlock());
 
         if(!event.getLine(1).equalsIgnoreCase("[pipe]")) return;
 
@@ -206,23 +208,19 @@ public class Pipes extends AbstractCraftBookMechanic {
     // mis-route items rather than merely delay a reparse.
     private static final long CACHE_TTL_MILLIS = 10 * 1000L;
 
-    private final Map<Location, CachedFilters> filterCache = new ConcurrentHashMap<>();
-
-    /** Last pulled slot per source piston, for round-robin pulling. */
-    private final Map<Location, Integer> pullCursor = new ConcurrentHashMap<>();
-
-    /** Pistons paused after a pull where nothing could be delivered (full network). */
-    private final Map<Location, Long> fullBackoff = new ConcurrentHashMap<>();
+    // The filter cache, the round-robin cursor and the full-pipe pause all live in the
+    // per-world holder below, keyed by packed position rather than by Location.
 
     private CachedFilters getFilters(Block block) {
         if (!pipeFilterCache)
             return parseFilters(block);
 
-        Location loc = block.getLocation();
-        CachedFilters cached = filterCache.get(loc);
+        Long2ObjectOpenHashMap<CachedFilters> cache = caches(block.getWorld()).filters;
+        long key = posKey(block);
+        CachedFilters cached = cache.get(key);
         if (cached == null || cached.isStale()) {
             cached = parseFilters(block);
-            filterCache.put(loc, cached);
+            cache.put(key, cached);
         }
         return cached;
     }
@@ -254,15 +252,32 @@ public class Pipes extends AbstractCraftBookMechanic {
         return new CachedFilters(filters, exceptions, passThrough, sign != null);
     }
 
-    private void invalidateFilterCacheAround(Location center) {
-        if (!pipeFilterCache || filterCache.isEmpty())
+    /**
+     * Drops the per-piston round-robin cursor and pause window for a block that is going
+     * away, so a new piston at the same position does not inherit either.
+     */
+    private void forgetPistonState(Block block) {
+        WorldTypes wt = typeCache.get(block.getWorld().getUID());
+        if (wt == null)
+            return;
+        long key = posKey(block);
+        wt.pullCursor.remove(key);
+        wt.fullBackoff.remove(key);
+    }
+
+    private void invalidateFilterCacheAround(Block center) {
+        if (!pipeFilterCache)
+            return;
+        WorldTypes wt = typeCache.get(center.getWorld().getUID());
+        if (wt == null || wt.filters.isEmpty())
             return;
         // Signs attach to their block, so anything parsed from a sign within one block
         // of the change may now be outdated.
+        int cx = center.getX(), cy = center.getY(), cz = center.getZ();
         for (int x = -1; x <= 1; x++) {
             for (int y = -1; y <= 1; y++) {
                 for (int z = -1; z <= 1; z++) {
-                    filterCache.remove(center.clone().add(x, y, z));
+                    wt.filters.remove(posKey(cx + x, cy + y, cz + z));
                 }
             }
         }
@@ -270,17 +285,16 @@ public class Pipes extends AbstractCraftBookMechanic {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onBlockBreak(BlockBreakEvent event) {
-        invalidateFilterCacheAround(event.getBlock().getLocation());
+        invalidateFilterCacheAround(event.getBlock());
         invalidateTypeCacheAt(event.getBlock());
         // A new piston at the same spot must not inherit the old one's round-robin
         // cursor or pause window; removing absent keys is a no-op.
-        pullCursor.remove(event.getBlock().getLocation());
-        fullBackoff.remove(event.getBlock().getLocation());
+        forgetPistonState(event.getBlock());
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onBlockPlace(BlockPlaceEvent event) {
-        invalidateFilterCacheAround(event.getBlock().getLocation());
+        invalidateFilterCacheAround(event.getBlock());
         invalidateTypeCacheAt(event.getBlock());
     }
 
@@ -291,11 +305,10 @@ public class Pipes extends AbstractCraftBookMechanic {
     // require-sign) for the whole TTL.
     private void invalidateBothCachesAt(Block block) {
         invalidateTypeCacheAt(block);
-        invalidateFilterCacheAround(block.getLocation());
+        invalidateFilterCacheAround(block);
         // A retracted piston is pushable, so a pipe's sticky piston can be relocated
         // by another piston with no BlockBreakEvent; drop its per-piston state too.
-        pullCursor.remove(block.getLocation());
-        fullBackoff.remove(block.getLocation());
+        forgetPistonState(block);
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
@@ -336,19 +349,20 @@ public class Pipes extends AbstractCraftBookMechanic {
 
     @EventHandler
     public void onWorldUnload(WorldUnloadEvent event) {
-        World world = event.getWorld();
-        filterCache.keySet().removeIf(loc -> world.equals(loc.getWorld()));
-        pullCursor.keySet().removeIf(loc -> world.equals(loc.getWorld()));
-        fullBackoff.keySet().removeIf(loc -> world.equals(loc.getWorld()));
-        typeCache.remove(world.getUID());
+        // One holder per world now carries every position-keyed cache.
+        typeCache.remove(event.getWorld().getUID());
     }
 
     /* Traversal ------------------------------------------------------------------------ */
 
+    private static long posKey(int x, int y, int z) {
+        return ((long) x & 0x3FFFFFFL) << 38
+                | ((long) z & 0x3FFFFFFL) << 12
+                | (long) y & 0xFFFL;
+    }
+
     private static long posKey(Block block) {
-        return ((long) block.getX() & 0x3FFFFFFL) << 38
-                | ((long) block.getZ() & 0x3FFFFFFL) << 12
-                | (long) block.getY() & 0xFFFL;
+        return posKey(block.getX(), block.getY(), block.getZ());
     }
 
     /* Block type memoisation ------------------------------------------------------------
@@ -367,17 +381,29 @@ public class Pipes extends AbstractCraftBookMechanic {
     private static final class WorldTypes {
         final Long2ObjectOpenHashMap<Material> types = new Long2ObjectOpenHashMap<>();
         final Long2ByteOpenHashMap insulators = new Long2ByteOpenHashMap();
+        // Position-keyed alongside the type memoisation so none of them need a Location
+        // object as a key: getFilters runs once per piston per visit, so a large network
+        // used to allocate one Location per piston per pulse just to look itself up.
+        final Long2ObjectOpenHashMap<CachedFilters> filters = new Long2ObjectOpenHashMap<>();
+        final Long2IntOpenHashMap pullCursor = new Long2IntOpenHashMap();
+        final Long2LongOpenHashMap fullBackoff = new Long2LongOpenHashMap();
         long clearedAt = System.currentTimeMillis();
 
         WorldTypes() {
             insulators.defaultReturnValue((byte) -1);
+            fullBackoff.defaultReturnValue(0L);
         }
     }
 
     private final Map<UUID, WorldTypes> typeCache = new ConcurrentHashMap<>();
 
+    /** Per-world caches, without the TTL sweep (which only applies to the type memoisation). */
+    private WorldTypes caches(World world) {
+        return typeCache.computeIfAbsent(world.getUID(), w -> new WorldTypes());
+    }
+
     private WorldTypes worldTypes(World world) {
-        WorldTypes wt = typeCache.computeIfAbsent(world.getUID(), w -> new WorldTypes());
+        WorldTypes wt = caches(world);
         long now = System.currentTimeMillis();
         if (now - wt.clearedAt > TYPE_CACHE_TTL_MILLIS) {
             wt.types.clear();
@@ -711,8 +737,10 @@ public class Pipes extends AbstractCraftBookMechanic {
             // full pipe fed by e.g. a self-triggered collector stops re-traversing and
             // vomiting items on every pulse.
             if (pipeFullCooldownMillis > 0) {
-                Long pausedUntil = fullBackoff.get(block.getLocation());
-                if (pausedUntil != null) {
+                Long2LongOpenHashMap backoff = caches(block.getWorld()).fullBackoff;
+                long pistonKey = posKey(block);
+                long pausedUntil = backoff.get(pistonKey);
+                if (pausedUntil != 0L) {
                     if (System.currentTimeMillis() < pausedUntil) {
                         // Requests carrying items (e.g. a ranged collector feeding this
                         // piston) still buffer into the source container while paused.
@@ -724,7 +752,7 @@ public class Pipes extends AbstractCraftBookMechanic {
                         }
                         return;
                     }
-                    fullBackoff.remove(block.getLocation());
+                    backoff.remove(pistonKey);
                 }
             }
 
@@ -746,10 +774,10 @@ public class Pipes extends AbstractCraftBookMechanic {
                 // Scan starting after the slot pulled last pulse, so a stack no output
                 // accepts (returned as leftovers) cannot block everything behind it.
                 int startSlot = 0;
-                Location pullKey = null;
+                Long2IntOpenHashMap cursor = null;
                 if (pipeRoundRobinPull && pipeStackPerPull && slots > 0) {
-                    pullKey = block.getLocation();
-                    startSlot = pullCursor.getOrDefault(pullKey, 0) % slots;
+                    cursor = caches(block.getWorld()).pullCursor;
+                    startSlot = cursor.get(posKey(block)) % slots;
                 }
 
                 for (int off = 0; off < slots; off++) {
@@ -766,8 +794,8 @@ public class Pipes extends AbstractCraftBookMechanic {
                     sourceHolder.getInventory().setItem(slot, null);
                     auditTaken(fac, stack, sourceHolder.getInventory().getItem(slot));
                     if (pipeStackPerPull) {
-                        if (pullKey != null)
-                            pullCursor.put(pullKey, slot + 1);
+                        if (cursor != null)
+                            cursor.put(posKey(block), slot + 1);
                         break;
                     }
                 }
@@ -792,7 +820,7 @@ public class Pipes extends AbstractCraftBookMechanic {
                         if (left != null)
                             undelivered += left.getAmount();
                     if (pipeFullCooldownMillis > 0 && pulledAmount > 0 && undelivered >= pulledAmount)
-                        fullBackoff.put(block.getLocation(), System.currentTimeMillis() + pipeFullCooldownMillis);
+                        caches(block.getWorld()).fullBackoff.put(posKey(block), System.currentTimeMillis() + pipeFullCooldownMillis);
 
                     if (facType == Material.CRAFTER)
                         leftovers.addAll(InventoryUtil.addItemsToCrafter((Crafter) PaperLib.getBlockState(fac, false).getState(), items.toArray(new ItemStack[items.size()])));
