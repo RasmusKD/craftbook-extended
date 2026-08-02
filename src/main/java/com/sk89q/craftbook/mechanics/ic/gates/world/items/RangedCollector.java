@@ -124,17 +124,11 @@ public class RangedCollector extends AbstractSelfTriggeredIC {
 
         List<Item> itemsForChest = Lists.newArrayList();
 
-        // The event has no registered listeners in the common case; only pay for it
-        // (and the per-item sign lookup) when something actually listens.
-        boolean fireEvents = RangedCollectEvent.getHandlerList().getRegisteredListeners().length > 0;
+        // Resolved lazily on the first entity that actually passes the filters: the sign
+        // lookup is a block state read, and this method runs every self-trigger tick on
+        // every magnet, almost always with nothing in radius to collect.
+        boolean pipeResolved = false;
         Block pipe = null;
-        if (fireEvents) {
-            org.bukkit.block.Sign signState = CraftBookBukkitUtil.toSign(getSign());
-            if (signState == null)
-                fireEvents = false;
-            else
-                pipe = getBackBlock().getRelative(SignUtil.getBack(signState.getBlock()));
-        }
 
         // Precise spatial lookup instead of scanning full entity arrays of 9 chunks.
         // The predicate keeps the original radius semantics (spherical when symmetric).
@@ -166,7 +160,16 @@ public class RangedCollector extends AbstractSelfTriggeredIC {
                 continue;
             }
 
-            if (fireEvents) {
+            if (!pipeResolved) {
+                pipeResolved = true;
+                if (RangedCollectEvent.getHandlerList().getRegisteredListeners().length > 0) {
+                    org.bukkit.block.Sign signState = CraftBookBukkitUtil.toSign(getSign());
+                    if (signState != null)
+                        pipe = getBackBlock().getRelative(SignUtil.getBack(signState.getBlock()));
+                }
+            }
+
+            if (pipe != null) {
                 RangedCollectEvent event = new RangedCollectEvent(pipe, entity, new ArrayList<>(Collections.singletonList(stack)), getBackBlock());
                 Bukkit.getPluginManager().callEvent(event);
 
