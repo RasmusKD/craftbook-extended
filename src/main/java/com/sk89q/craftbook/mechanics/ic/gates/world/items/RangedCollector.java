@@ -69,8 +69,6 @@ public class RangedCollector extends AbstractSelfTriggeredIC {
 
     private boolean include = false;
 
-    private Block chest;
-
     private List<ItemStack> filters = new ArrayList<>();
 
     @Override
@@ -99,7 +97,22 @@ public class RangedCollector extends AbstractSelfTriggeredIC {
             }
         }
 
-        chest = getBackBlock().getRelative(0, 1, 0);
+    }
+
+    /**
+     * The container collected items go into: the block above the sign's backing block
+     * (the classic placement), falling back to the backing block itself when the sign
+     * sits directly on a container and nothing stands above it. Resolved per collection
+     * so containers placed after the sign are picked up too.
+     */
+    private Block resolveContainer() {
+        Block back = getBackBlock();
+        Block above = back.getRelative(0, 1, 0);
+        if (InventoryUtil.doesBlockHaveInventory(above))
+            return above;
+        if (InventoryUtil.doesBlockHaveInventory(back))
+            return back;
+        return above;
     }
 
     public boolean collect() {
@@ -166,10 +179,11 @@ public class RangedCollector extends AbstractSelfTriggeredIC {
         }
 
         if (!itemsForChest.isEmpty()) {
-            if(!InventoryUtil.doesBlockHaveInventory(chest))
+            Block container = resolveContainer();
+            if(!InventoryUtil.doesBlockHaveInventory(container))
                 return false;
 
-            InventoryHolder chestState = (InventoryHolder) PaperLib.getBlockState(chest, false).getState();
+            InventoryHolder chestState = (InventoryHolder) PaperLib.getBlockState(container, false).getState();
 
             // Add the items to a container, and destroy them.
             for (Item entity : itemsForChest) {
