@@ -176,6 +176,9 @@ public class Pipes extends AbstractCraftBookMechanic {
 
     private final Map<Location, CachedFilters> filterCache = new ConcurrentHashMap<>();
 
+    /** Last pulled slot per source piston, for round-robin pulling. */
+    private final Map<Location, Integer> pullCursor = new ConcurrentHashMap<>();
+
     private CachedFilters getFilters(Block block) {
         if (!pipeFilterCache)
             return parseFilters(block);
@@ -272,6 +275,7 @@ public class Pipes extends AbstractCraftBookMechanic {
     public void onWorldUnload(WorldUnloadEvent event) {
         World world = event.getWorld();
         filterCache.keySet().removeIf(loc -> world.equals(loc.getWorld()));
+        pullCursor.keySet().removeIf(loc -> world.equals(loc.getWorld()));
         typeCache.remove(world.getUID());
     }
 
@@ -599,7 +603,21 @@ public class Pipes extends AbstractCraftBookMechanic {
                     || facType == Material.DECORATED_POT
                     || Tag.SHULKER_BOXES.isTagged(facType)) {
                 InventoryHolder sourceHolder = (InventoryHolder) PaperLib.getBlockState(fac, false).getState();
-                for (ItemStack stack : sourceHolder.getInventory().getContents()) {
+                ItemStack[] contents = sourceHolder.getInventory().getContents();
+                int slots = contents.length;
+
+                // Scan starting after the slot pulled last pulse, so a stack no output
+                // accepts (returned as leftovers) cannot block everything behind it.
+                int startSlot = 0;
+                Location pullKey = null;
+                if (pipeRoundRobinPull && pipeStackPerPull && slots > 0) {
+                    pullKey = block.getLocation();
+                    startSlot = pullCursor.getOrDefault(pullKey, 0) % slots;
+                }
+
+                for (int off = 0; off < slots; off++) {
+                    int slot = (startSlot + off) % slots;
+                    ItemStack stack = contents[slot];
 
                     if (!ItemUtil.isStackValid(stack))
                         continue;
@@ -608,9 +626,12 @@ public class Pipes extends AbstractCraftBookMechanic {
                         continue;
 
                     items.add(stack);
-                    sourceHolder.getInventory().removeItem(stack);
-                    if (pipeStackPerPull)
+                    sourceHolder.getInventory().setItem(slot, null);
+                    if (pipeStackPerPull) {
+                        if (pullKey != null)
+                            pullCursor.put(pullKey, slot + 1);
                         break;
+                    }
                 }
 
                 PipeSuckEvent event = new PipeSuckEvent(block, new ArrayList<>(items), fac);
@@ -785,6 +806,7 @@ public class Pipes extends AbstractCraftBookMechanic {
     private boolean pipeStackPerPull;
     private boolean pipeRequireSign;
     private boolean pipeFilterCache;
+    private boolean pipeRoundRobinPull;
     private int pipeDropperDropLimit;
     private boolean pipePassThrough;
     private boolean pipeTraversalCache;
@@ -816,6 +838,9 @@ public class Pipes extends AbstractCraftBookMechanic {
 
         config.setComment(path + "filters-match-type", "When a pipe or collector filter entry has no item meta, match by item type alone so potions, enchanted books and renamed items are caught by plain filters instead of passing through. Disable for strict vanilla meta matching.");
         com.sk89q.craftbook.util.ItemUtil.setLooseFilterMatching(config.getBoolean(path + "filters-match-type", true));
+
+        config.setComment(path + "round-robin-pull", "Pull container slots in rotation instead of always taking the first stack, so one stack no output accepts cannot block everything behind it. Disable for strict vanilla first-stack behaviour.");
+        pipeRoundRobinPull = config.getBoolean(path + "round-robin-pull", true);
 
         config.setComment(path + "claim-protect-pulls", "Stop pipes pulling items out of containers inside a GriefPrevention claim unless the pulling piston stands in a claim with the same owner. Closes a theft vector vanilla hoppers don't have. Ignored when GriefPrevention is not installed.");
         com.sk89q.craftbook.mechanics.ic.gates.world.miscellaneous.PipeLinkProtection.setProtectPulls(config.getBoolean(path + "claim-protect-pulls", true));
