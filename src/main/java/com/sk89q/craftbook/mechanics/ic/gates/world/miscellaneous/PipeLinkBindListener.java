@@ -161,6 +161,10 @@ public class PipeLinkBindListener implements Listener {
             if (recv != null && SignUtil.isSign(recv)) {
                 sendLocationMessage(p, ChatColor.GREEN + "[Pipes] Sender er bundet til receiver @ "
                         + recv.getWorld().getName() + " " + recv.getX() + " " + recv.getY() + " " + recv.getZ(), recv);
+                String dormant = describeDormant(clicked.getBlock(), recv);
+                if (dormant != null) {
+                    p.sendMessage(ChatColor.YELLOW + "[Pipes] Linket er i dvale — der sendes ingen items: " + dormant + ".");
+                }
                 drawLinkParticles(p, center(clicked.getBlock()), center(recv));
             } else {
                 p.sendMessage(ChatColor.YELLOW + "[Pipes] Receiveren findes ikke (forældet link).");
@@ -190,12 +194,27 @@ public class PipeLinkBindListener implements Listener {
                 if (w == null)
                     continue;
                 Block senderBlock = w.getBlockAt(sr.x(), sr.y(), sr.z());
-                sendLocationMessage(p, ChatColor.GRAY + "- " + w.getName() + " " + sr.x() + " " + sr.y() + " " + sr.z(), senderBlock);
+                String dormant = describeDormant(senderBlock, clicked.getBlock());
+                String suffix = dormant == null ? "" : ChatColor.YELLOW + " (i dvale: " + dormant + ")";
+                sendLocationMessage(p, ChatColor.GRAY + "- " + w.getName() + " " + sr.x() + " " + sr.y() + " " + sr.z() + suffix, senderBlock);
                 drawLinkParticles(p, center(senderBlock), center(clicked.getBlock()));
             }
         } else {
             p.sendMessage(ChatColor.RED + "[Pipes] Dette er ikke et PipeLink-skilt.");
         }
+    }
+
+    /**
+     * Why an existing link is currently dormant (the router silently refuses delivery), or
+     * null if it is live. Mirrors the checks in PipeLinkRouter.sendThroughLink so inspect
+     * can explain what the router never has a player to tell.
+     */
+    private static String describeDormant(Block sender, Block receiver) {
+        if (!PipeLinkProtection.isWorldAllowed(sender.getWorld()))
+            return "PipeLink er slået fra i '" + sender.getWorld().getName() + "'";
+        if (!PipeLinkProtection.isWorldAllowed(receiver.getWorld()))
+            return "PipeLink er slået fra i '" + receiver.getWorld().getName() + "'";
+        return PipeLinkProtection.describeCrossLinkDenial(sender.getWorld(), receiver.getWorld());
     }
 
     public static boolean isReceiverIC(Sign s) {
