@@ -263,6 +263,7 @@ public class Pipes extends AbstractCraftBookMechanic {
         long key = posKey(block);
         wt.pullCursor.remove(key);
         wt.fullBackoff.remove(key);
+        wt.smokeAt.remove(key);
     }
 
     private void invalidateFilterCacheAround(Block center) {
@@ -387,6 +388,7 @@ public class Pipes extends AbstractCraftBookMechanic {
         final Long2ObjectOpenHashMap<CachedFilters> filters = new Long2ObjectOpenHashMap<>();
         final Long2IntOpenHashMap pullCursor = new Long2IntOpenHashMap();
         final Long2LongOpenHashMap fullBackoff = new Long2LongOpenHashMap();
+        final Long2LongOpenHashMap smokeAt = new Long2LongOpenHashMap();
         long clearedAt = System.currentTimeMillis();
 
         WorldTypes() {
@@ -704,6 +706,26 @@ public class Pipes extends AbstractCraftBookMechanic {
                 + " (reported once per block; further occurrences here are silent)");
     }
 
+    /**
+     * A visible signal on a paused piston: black smoke rising while pulses arrive and
+     * the network is refusing items. With links and cross-dimension receivers the
+     * blockage is otherwise invisible from the sending side. Throttled per piston so a
+     * fast clock reads as a steady chimney rather than a particle storm.
+     */
+    private void spawnPauseSmoke(Block piston) {
+        if (!pipeFullSmoke)
+            return;
+        WorldTypes wt = caches(piston.getWorld());
+        long now = System.currentTimeMillis();
+        long key = posKey(piston);
+        if (now - wt.smokeAt.get(key) < 600L)
+            return;
+        wt.smokeAt.put(key, now);
+        piston.getWorld().spawnParticle(org.bukkit.Particle.LARGE_SMOKE,
+                piston.getX() + 0.5, piston.getY() + 1.2, piston.getZ() + 0.5,
+                5, 0.15, 0.1, 0.15, 0.01);
+    }
+
     private void startPipe(Block block, List<ItemStack> items, boolean request) {
         startPipe(block, items, request, null);
     }
@@ -742,6 +764,7 @@ public class Pipes extends AbstractCraftBookMechanic {
                 long pausedUntil = backoff.get(pistonKey);
                 if (pausedUntil != 0L) {
                     if (System.currentTimeMillis() < pausedUntil) {
+                        spawnPauseSmoke(block);
                         // Requests carrying items (e.g. a ranged collector feeding this
                         // piston) still buffer into the source container while paused.
                         if (!items.isEmpty() && InventoryUtil.doesBlockHaveInventory(fac)) {
@@ -821,6 +844,7 @@ public class Pipes extends AbstractCraftBookMechanic {
                             undelivered += left.getAmount();
                     if (pipeFullCooldownMillis > 0 && pulledAmount > 0 && undelivered >= pulledAmount)
                         caches(block.getWorld()).fullBackoff.put(posKey(block), System.currentTimeMillis() + pipeFullCooldownMillis);
+                        spawnPauseSmoke(block);
 
                     if (facType == Material.CRAFTER)
                         leftovers.addAll(InventoryUtil.addItemsToCrafter((Crafter) PaperLib.getBlockState(fac, false).getState(), items.toArray(new ItemStack[items.size()])));
@@ -994,6 +1018,7 @@ public class Pipes extends AbstractCraftBookMechanic {
     private boolean pipeFilterCache;
     private boolean pipeRoundRobinPull;
     private int pipeFullCooldownMillis;
+    private boolean pipeFullSmoke;
     private int pipeDropperDropLimit;
     private boolean pipePassThrough;
     private boolean pipeTraversalCache;
@@ -1028,6 +1053,9 @@ public class Pipes extends AbstractCraftBookMechanic {
 
         config.setComment(path + "full-pipe-cooldown", "Seconds a sticky piston waits before pulling again after a pulse where nothing could be delivered anywhere (full network). Stops full pipes wasting full traversals and vomiting items every pulse. 0 disables.");
         pipeFullCooldownMillis = config.getInt(path + "full-pipe-cooldown", 2) * 1000;
+
+        config.setComment(path + "full-pipe-smoke", "Show black smoke above a paused piston while pulses arrive and its network is refusing items. Makes a blocked far end visible from the sending side, which matters for links and cross-dimension receivers.");
+        pipeFullSmoke = config.getBoolean(path + "full-pipe-smoke", true);
 
         config.setComment(path + "round-robin-pull", "Pull container slots in rotation instead of always taking the first stack, so one stack no output accepts cannot block everything behind it. Disable for strict vanilla first-stack behaviour.");
         pipeRoundRobinPull = config.getBoolean(path + "round-robin-pull", true);
