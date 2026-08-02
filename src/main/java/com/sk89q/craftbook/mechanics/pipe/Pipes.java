@@ -655,16 +655,27 @@ public class Pipes extends AbstractCraftBookMechanic {
      * that - the counts balance - so the check has to be "is it still in the source?".
      *
      * Call after the removal, with whatever the source reports for that slot afterwards.
+     *
+     * Reported once per source block per session, not once per pulse: this is a static
+     * code fault, so a clocked piston would otherwise write the same line ten times a
+     * second and bury the debug output it was turned on to read.
      */
+    private static final LongOpenHashSet reportedFabrications = new LongOpenHashSet();
+
     private static void auditTaken(Block source, ItemStack taken, ItemStack stillInSource) {
         if (taken == null || !CraftBookPlugin.isDebugFlagEnabled("pipes"))
             return;
         if (stillInSource == null || !ItemUtil.areItemsIdentical(taken, stillInSource))
             return;
+        if (reportedFabrications.size() > 256)
+            reportedFabrications.clear();
+        if (!reportedFabrications.add(posKey(source)))
+            return;
         CraftBookPlugin.logger().warning("[Pipes] Fabrication: took " + taken.getType() + " x" + taken.getAmount()
                 + " from " + source.getType() + " @ " + source.getWorld().getName() + " "
                 + source.getX() + " " + source.getY() + " " + source.getZ()
-                + " but the source still holds it - the item now exists twice.");
+                + " but the source still holds it - the item now exists twice."
+                + " (reported once per block; further occurrences here are silent)");
     }
 
     private void startPipe(Block block, List<ItemStack> items, boolean request) {
