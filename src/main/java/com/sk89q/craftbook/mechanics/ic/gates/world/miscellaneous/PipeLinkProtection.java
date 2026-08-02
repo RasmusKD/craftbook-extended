@@ -80,6 +80,16 @@ public final class PipeLinkProtection {
         return claim.getOwnerName();
     }
 
+    private static volatile boolean allowCrossDimension = true;
+
+    public static void setAllowCrossDimension(boolean allow) {
+        allowCrossDimension = allow;
+    }
+
+    public static boolean isCrossDimensionAllowed() {
+        return allowCrossDimension;
+    }
+
     private static volatile boolean protectPulls = true;
 
     public static void setProtectPulls(boolean protect) {

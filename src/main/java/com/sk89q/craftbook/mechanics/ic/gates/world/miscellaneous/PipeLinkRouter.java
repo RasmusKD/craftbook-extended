@@ -161,6 +161,11 @@ public class PipeLinkRouter implements Listener {
             return null;
         }
 
+        if (!PipeLinkProtection.isCrossDimensionAllowed()
+                && !senderSignBlock.getWorld().getUID().equals(recvSign.getWorld().getUID())) {
+            return null; // cross-dimension links lie dormant while disabled
+        }
+
         String key = PipeRequestEvent.buildTeleportKey(senderSignBlock, recvSign);
         if (existingTeleports != null && existingTeleports.contains(key)) {
             Bukkit.getLogger().warning("[Pipes] PipeLink loop detected: " + key);

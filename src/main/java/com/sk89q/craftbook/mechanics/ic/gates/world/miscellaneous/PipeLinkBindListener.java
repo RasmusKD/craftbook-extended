@@ -112,6 +112,11 @@ public class PipeLinkBindListener implements Listener {
             return;
         }
         Block recvBlock = PipeLinkIndex.get().getReceiverSignBlock(rid);
+        if (recvBlock != null && !PipeLinkProtection.isCrossDimensionAllowed()
+                && !recvBlock.getWorld().getUID().equals(senderSign.getWorld().getUID())) {
+            p.sendMessage(ChatColor.RED + "[Pipes] Links på tværs af dimensioner er slået fra på serveren.");
+            return;
+        }
         if (recvBlock != null) {
             String recvDenial = PipeLinkProtection.describeDenial(p, recvBlock);
             if (recvDenial != null) {
