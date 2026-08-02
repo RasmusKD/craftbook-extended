@@ -39,7 +39,6 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public class PipeLinkBindListener implements Listener {
 
-    private final Map<UUID, UUID> awaitingBind = new ConcurrentHashMap<>();
     private final Map<UUID, UUID> lastReceiver = new ConcurrentHashMap<>();
 
     // Runs first and does not respect prior cancellation: other plugins (and air-click
@@ -73,16 +72,10 @@ public class PipeLinkBindListener implements Listener {
     private void handleBlaze(Player p, Sign clicked) {
         UUID pid = p.getUniqueId();
 
-        if (isSenderIC(clicked) && lastReceiver.containsKey(pid)) {
-            doBind(p, clicked, lastReceiver.get(pid));
-            return;
-        }
-
-        if (!awaitingBind.containsKey(pid)) {
-            if (!isReceiverIC(clicked)) {
-                p.sendMessage(ChatColor.RED + "[Pipes] Klik først et Receiver-skilt ([MC1281]/PIPELINK_RECEIVER) med Blaze Rod.");
-                return;
-            }
+        if (isReceiverIC(clicked)) {
+            // Clicking a receiver always (re)selects it; sender clicks bind to the last
+            // selected receiver, so re-clicking a sender after picking a new receiver
+            // simply rebinds it.
             String denial = PipeLinkProtection.describeDenial(p, clicked.getBlock());
             if (denial != null) {
                 p.sendMessage(ChatColor.RED + "[Pipes] Du mangler trust i " + denial + "s claim til at linke pipes (kræver /" + PipeLinkProtection.requiredTrustName() + ").");
@@ -95,18 +88,21 @@ public class PipeLinkBindListener implements Listener {
             }
             PipeLinkIndex.get().registerReceiver(rid, clicked.getWorld().getUID(), clicked.getX(), clicked.getY(), clicked.getZ());
             lastReceiver.put(pid, rid);
-            awaitingBind.put(pid, rid);
-            p.sendMessage(ChatColor.GREEN + "[Pipes] Receiver valgt. Klik nu en Sender ([MC1282]/PIPELINK_SENDER).");
-        } else if (!isSenderIC(clicked)) {
-            p.sendMessage(ChatColor.RED + "[Pipes] Nu skal du klikke en Sender ([MC1282]/PIPELINK_SENDER).");
-        } else {
-            UUID rid = awaitingBind.remove(pid);
+            p.sendMessage(ChatColor.GREEN + "[Pipes] Receiver valgt. Klik nu en eller flere Senders ([MC1282]).");
+            return;
+        }
+
+        if (isSenderIC(clicked)) {
+            UUID rid = lastReceiver.get(pid);
             if (rid == null) {
-                p.sendMessage(ChatColor.RED + "[Pipes] Intern fejl: mangler receiver-valg. Prøv igen.");
+                p.sendMessage(ChatColor.RED + "[Pipes] Klik først et Receiver-skilt ([MC1281]) med Blaze Rod.");
                 return;
             }
             doBind(p, clicked, rid);
+            return;
         }
+
+        p.sendMessage(ChatColor.RED + "[Pipes] Dette er ikke et PipeLink-skilt.");
     }
 
     private void doBind(Player p, Sign senderSign, UUID rid) {
@@ -124,12 +120,14 @@ public class PipeLinkBindListener implements Listener {
             }
         }
 
+        UUID previous = PipeLink.readBoundReceiverUUID(senderSign);
         PipeLink.writeBoundReceiverUUID(senderSign, rid);
         PipeLinkIndex.get().bindSender(senderSign.getWorld().getUID(), senderSign.getX(), senderSign.getY(), senderSign.getZ(), rid);
 
+        String verb = previous == null ? "bundet" : previous.equals(rid) ? "allerede bundet" : "ombundet";
         Block recv = PipeLinkIndex.get().getReceiverSignBlock(rid);
         if (recv != null) {
-            sendLocationMessage(p, ChatColor.AQUA + "[Pipes] Sender bundet til receiver @ "
+            sendLocationMessage(p, ChatColor.AQUA + "[Pipes] Sender " + verb + " til receiver @ "
                     + recv.getWorld().getName() + " " + recv.getX() + " " + recv.getY() + " " + recv.getZ(), recv);
             drawLinkParticles(p, center(senderSign.getBlock()), center(recv));
         } else {

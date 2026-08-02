@@ -15,6 +15,26 @@ import java.util.UUID;
  */
 public class PipeLinkBreakListener implements Listener {
 
+    /**
+     * PipeLink signs cannot be broken while holding the bind/inspect tools, so
+     * left-clicking with them (instant break in creative!) is always safe. Switch to any
+     * other item to actually remove the sign - which also removes its link.
+     */
+    @EventHandler(priority = EventPriority.LOW, ignoreCancelled = true)
+    public void onBreakGuard(BlockBreakEvent e) {
+        if (!SignUtil.isSign(e.getBlock()))
+            return;
+        org.bukkit.Material inHand = e.getPlayer().getInventory().getItemInMainHand().getType();
+        if (inHand != org.bukkit.Material.BLAZE_ROD && inHand != org.bukkit.Material.BREEZE_ROD)
+            return;
+        if (!(e.getBlock().getState() instanceof Sign s))
+            return;
+        if (PipeLinkBindListener.isSenderIC(s) || PipeLinkBindListener.isReceiverIC(s)) {
+            e.setCancelled(true);
+            e.getPlayer().sendMessage(org.bukkit.ChatColor.GRAY + "[Pipes] Skiltet kan ikke brydes med bind-værktøjet i hånden — skift item for at fjerne det (og dermed linket).");
+        }
+    }
+
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onBreak(BlockBreakEvent e) {
         if (!SignUtil.isSign(e.getBlock()))

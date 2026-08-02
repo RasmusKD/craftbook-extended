@@ -102,7 +102,7 @@ public class PipeLinkRouter implements Listener {
 
         UUID rid = index.getBoundReceiverAt(world, PipeLinkIndex.posKey(target));
         if (rid != null && SignUtil.isSign(target))
-            return new SenderHit(target, rid);
+            return verifiedHit(index, world, target, rid);
 
         for (BlockFace face : NEIGHBOUR_FACES) {
             Block nb = target.getRelative(face);
@@ -111,13 +111,27 @@ public class PipeLinkRouter implements Listener {
                 continue;
             Block front = SignUtil.getFrontBlock(nb);
             if (front != null && front.equals(target))
-                return new SenderHit(nb, nbRid);
+                return verifiedHit(index, world, nb, nbRid);
             if (includeBack) {
                 Block back = SignUtil.getBackBlock(nb);
                 if (back != null && back.equals(target))
-                    return new SenderHit(nb, nbRid);
+                    return verifiedHit(index, world, nb, nbRid);
             }
         }
+        return null;
+    }
+
+    /**
+     * Confirms an index hit against the sign's persistent data. Signs can vanish without a
+     * break event (e.g. a wall sign popping off with its support block) and be replaced,
+     * so stale entries are healed here instead of ghost-routing through a fresh sign.
+     */
+    private SenderHit verifiedHit(PipeLinkIndex index, UUID world, Block signBlock, UUID rid) {
+        if (io.papermc.lib.PaperLib.getBlockState(signBlock, false).getState() instanceof org.bukkit.block.Sign sign
+                && rid.equals(PipeLink.readBoundReceiverUUID(sign))) {
+            return new SenderHit(signBlock, rid);
+        }
+        index.unbindSenderAt(world, signBlock.getX(), signBlock.getY(), signBlock.getZ());
         return null;
     }
 
@@ -139,8 +153,10 @@ public class PipeLinkRouter implements Listener {
         Block recvSign = index.getReceiverSignBlock(receiverId);
         if (recvSign == null)
             return null;
-        if (!SignUtil.isSign(recvSign)) {
-            // Stale index entry - the sign is gone.
+        if (!SignUtil.isSign(recvSign)
+                || !(io.papermc.lib.PaperLib.getBlockState(recvSign, false).getState() instanceof org.bukkit.block.Sign recvState)
+                || !receiverId.equals(PipeLink.readReceiverUUID(recvState))) {
+            // Stale index entry - the sign is gone or was replaced.
             index.unregisterReceiver(receiverId);
             return null;
         }

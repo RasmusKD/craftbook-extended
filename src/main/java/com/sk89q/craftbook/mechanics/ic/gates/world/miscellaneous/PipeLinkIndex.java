@@ -135,6 +135,24 @@ public class PipeLinkIndex implements Listener {
 
     /* Chunk scanning ------------------------------------------------------------------- */
 
+    @EventHandler(priority = org.bukkit.event.EventPriority.MONITOR, ignoreCancelled = true)
+    public void onSignChange(org.bukkit.event.block.SignChangeEvent event) {
+        // A freshly placed sign carries no PDC, so any stale sender entry at this position
+        // must go; an edited existing sign keeps its PDC and is simply re-indexed. The
+        // state is read next tick, after the change has been applied.
+        org.bukkit.block.Block block = event.getBlock();
+        Bukkit.getScheduler().runTask(com.sk89q.craftbook.bukkit.CraftBookPlugin.inst(), () -> {
+            UUID world = block.getWorld().getUID();
+            if (block.getState() instanceof Sign sign) {
+                if (PipeLink.readBoundReceiverUUID(sign) == null)
+                    unbindSenderAt(world, block.getX(), block.getY(), block.getZ());
+                indexSign(sign);
+            } else {
+                unbindSenderAt(world, block.getX(), block.getY(), block.getZ());
+            }
+        });
+    }
+
     @EventHandler
     public void onChunkLoad(ChunkLoadEvent event) {
         scanChunk(event.getChunk());
