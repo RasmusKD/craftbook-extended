@@ -355,6 +355,11 @@ public class InventoryUtil {
      */
     public static boolean fitsInSlot(ItemStack stack, ItemStack slot) {
 
+        // An empty slot still cannot hold more than one stack: single-slot containers
+        // (furnace, brewing stand) clamp on insert, and the caller would report no
+        // leftovers for the part that was clamped away.
+        if (stack.getAmount() > stack.getMaxStackSize())
+            return false;
         return slot == null || ItemUtil.areItemsIdentical(stack, slot) && stack.getAmount() + slot.getAmount() <= stack.getMaxStackSize();
     }
 
