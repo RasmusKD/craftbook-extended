@@ -191,8 +191,11 @@ public class PipeLinkBindListener implements Listener {
             p.sendMessage(ChatColor.AQUA + "[Pipes] " + sorted.size() + " sender" + (sorted.size() == 1 ? "" : "e") + " bundet til denne receiver:");
             for (PipeLinkIndex.SenderRef sr : sorted) {
                 World w = Bukkit.getWorld(sr.world());
-                if (w == null)
+                if (w == null) {
+                    p.sendMessage(ChatColor.GRAY + "- " + sr.x() + " " + sr.y() + " " + sr.z()
+                            + ChatColor.YELLOW + " (i en verden der ikke er indlæst)");
                     continue;
+                }
                 Block senderBlock = w.getBlockAt(sr.x(), sr.y(), sr.z());
                 String dormant = describeDormant(senderBlock, clicked.getBlock());
                 String suffix = dormant == null ? "" : ChatColor.YELLOW + " (i dvale: " + dormant + ")";

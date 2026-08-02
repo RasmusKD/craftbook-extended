@@ -187,6 +187,28 @@ public final class PipeLinkProtection {
         return java.util.Objects.equals(containerClaim.getOwnerID(), pistonClaim.getOwnerID());
     }
 
+    /**
+     * Player-facing reason why pipe pulls from this container are blocked, or null if
+     * pulls are allowed. Same rule as {@link #mayPipePull}, but only called from
+     * player-triggered paths (sign creation), so building the message is fine here.
+     */
+    public static String describePullDenial(Block piston, Block container) {
+        if (!protectPulls)
+            return null;
+        Plugin gp = Bukkit.getPluginManager().getPlugin("GriefPrevention");
+        if (gp == null || !gp.isEnabled())
+            return null;
+        Claim containerClaim = GriefPrevention.instance.dataStore.getClaimAt(container.getLocation(), false, null);
+        if (containerClaim == null)
+            return null;
+        Claim pistonClaim = GriefPrevention.instance.dataStore.getClaimAt(piston.getLocation(), false, null);
+        if (pistonClaim == null)
+            return "containeren står i " + containerClaim.getOwnerName() + "s claim, men pistonen står uden for claim";
+        if (!java.util.Objects.equals(containerClaim.getOwnerID(), pistonClaim.getOwnerID()))
+            return "containeren står i " + containerClaim.getOwnerName() + "s claim, men pistonen står i " + pistonClaim.getOwnerName() + "s claim";
+        return null;
+    }
+
     /** The GP trust command matching the configured level, for player-facing messages. */
     public static String requiredTrustName() {
         return switch (level) {

@@ -115,6 +115,31 @@ public class Pipes extends AbstractCraftBookMechanic {
 
         event.setLine(1, "[Pipe]");
         player.print("circuits.pipes.create");
+
+        // The pull-claim rule blocks at pulse time, where no player is around to tell -
+        // so warn the creator here if this pipe's pulls would be blocked as things stand.
+        Block pullPiston = null;
+        if (SignUtil.isWallSign(event.getBlock())) {
+            pullPiston = SignUtil.getBackBlock(event.getBlock());
+        } else if (SignUtil.isStandingSign(event.getBlock())) {
+            if (isPiston(event.getBlock().getRelative(BlockFace.DOWN))) {
+                pullPiston = event.getBlock().getRelative(BlockFace.DOWN);
+            } else if (isPiston(event.getBlock().getRelative(BlockFace.UP))) {
+                pullPiston = event.getBlock().getRelative(BlockFace.UP);
+            }
+        }
+        if (pullPiston != null && pullPiston.getType() == Material.STICKY_PISTON) {
+            Piston pis = (Piston) pullPiston.getBlockData();
+            Block off = pullPiston.getRelative(pis.getFacing());
+            if (InventoryUtil.doesBlockHaveInventory(off)) {
+                String pullDenial = com.sk89q.craftbook.mechanics.ic.gates.world.miscellaneous.PipeLinkProtection
+                        .describePullDenial(pullPiston, off);
+                if (pullDenial != null) {
+                    event.getPlayer().sendMessage(org.bukkit.ChatColor.YELLOW
+                            + "[Pipes] Advarsel: pipen er lavet, men den kan ikke suge fra containeren — " + pullDenial + ".");
+                }
+            }
+        }
     }
 
     private static boolean isPiston(Block block) {
