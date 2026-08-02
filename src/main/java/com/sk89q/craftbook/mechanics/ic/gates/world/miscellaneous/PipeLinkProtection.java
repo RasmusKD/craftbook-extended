@@ -80,6 +80,24 @@ public final class PipeLinkProtection {
         return claim.getOwnerName();
     }
 
+    private static volatile java.util.Set<String> worldBlacklist = java.util.Set.of();
+
+    public static void setWorldBlacklist(java.util.List<String> worlds) {
+        java.util.Set<String> set = new java.util.HashSet<>();
+        if (worlds != null) {
+            for (String w : worlds) {
+                if (w != null && !w.isBlank())
+                    set.add(w.trim().toLowerCase(Locale.ROOT));
+            }
+        }
+        worldBlacklist = set;
+    }
+
+    /** Whether PipeLinks may operate in this world at all. */
+    public static boolean isWorldAllowed(org.bukkit.World world) {
+        return worldBlacklist.isEmpty() || !worldBlacklist.contains(world.getName().toLowerCase(Locale.ROOT));
+    }
+
     private static volatile boolean allowCrossDimension = true;
 
     public static void setAllowCrossDimension(boolean allow) {

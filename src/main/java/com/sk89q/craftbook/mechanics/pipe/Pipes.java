@@ -820,6 +820,9 @@ public class Pipes extends AbstractCraftBookMechanic {
         config.setComment(path + "claim-protect-pulls", "Stop pipes pulling items out of containers inside a GriefPrevention claim unless the pulling piston stands in a claim with the same owner. Closes a theft vector vanilla hoppers don't have. Ignored when GriefPrevention is not installed.");
         com.sk89q.craftbook.mechanics.ic.gates.world.miscellaneous.PipeLinkProtection.setProtectPulls(config.getBoolean(path + "claim-protect-pulls", true));
 
+        config.setComment(path + "link-world-blacklist", "Worlds where PipeLink may not bind or deliver at all (either endpoint). Useful to keep e.g. a creative world on the same server out of survival item flows. Empty by default.");
+        com.sk89q.craftbook.mechanics.ic.gates.world.miscellaneous.PipeLinkProtection.setWorldBlacklist(config.getStringList(path + "link-world-blacklist", new java.util.ArrayList<>()));
+
         config.setComment(path + "link-cross-dimension", "Allow PipeLink senders and receivers to be linked across dimensions (overworld/nether/end). When disabled, new cross-dimension bindings are refused and existing ones lie dormant until re-enabled.");
         com.sk89q.craftbook.mechanics.ic.gates.world.miscellaneous.PipeLinkProtection.setAllowCrossDimension(config.getBoolean(path + "link-cross-dimension", true));
 

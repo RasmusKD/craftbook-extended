@@ -76,6 +76,10 @@ public class PipeLinkBindListener implements Listener {
             // Clicking a receiver always (re)selects it; sender clicks bind to the last
             // selected receiver, so re-clicking a sender after picking a new receiver
             // simply rebinds it.
+            if (!PipeLinkProtection.isWorldAllowed(clicked.getWorld())) {
+                p.sendMessage(ChatColor.RED + "[Pipes] PipeLink er slået fra i denne verden.");
+                return;
+            }
             String denial = PipeLinkProtection.describeDenial(p, clicked.getBlock());
             if (denial != null) {
                 p.sendMessage(ChatColor.RED + "[Pipes] Du mangler trust i " + denial + "s claim til at linke pipes (kræver /" + PipeLinkProtection.requiredTrustName() + ").");
@@ -106,6 +110,10 @@ public class PipeLinkBindListener implements Listener {
     }
 
     private void doBind(Player p, Sign senderSign, UUID rid) {
+        if (!PipeLinkProtection.isWorldAllowed(senderSign.getWorld())) {
+            p.sendMessage(ChatColor.RED + "[Pipes] PipeLink er slået fra i denne verden.");
+            return;
+        }
         String senderDenial = PipeLinkProtection.describeDenial(p, senderSign.getBlock());
         if (senderDenial != null) {
             p.sendMessage(ChatColor.RED + "[Pipes] Du mangler trust i " + senderDenial + "s claim til at linke pipes (kræver /" + PipeLinkProtection.requiredTrustName() + ").");
