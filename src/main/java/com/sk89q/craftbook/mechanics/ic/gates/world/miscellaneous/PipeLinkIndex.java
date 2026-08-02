@@ -1,6 +1,7 @@
 package com.sk89q.craftbook.mechanics.ic.gates.world.miscellaneous;
 
 import com.sk89q.craftbook.util.SignUtil;
+import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import io.papermc.lib.PaperLib;
 import org.bukkit.Bukkit;
 import org.bukkit.Chunk;
@@ -33,8 +34,10 @@ public class PipeLinkIndex implements Listener {
 
     private static final PipeLinkIndex INSTANCE = new PipeLinkIndex();
 
-    /** Sender sign position (packed) per world -> bound receiver id. */
-    private final Map<UUID, Map<Long, UUID>> sendersByWorld = new ConcurrentHashMap<>();
+    /** Sender sign position (packed) per world -> bound receiver id. Primitive-keyed:
+     * the router probes seven positions per pipe event, and a boxed Long per probe was
+     * the same allocation the traversal caches already had removed. Main-thread only. */
+    private final Map<UUID, Long2ObjectOpenHashMap<UUID>> sendersByWorld = new ConcurrentHashMap<>();
     /** Receiver id -> receiver sign location. */
     private final Map<UUID, ReceiverRef> receivers = new ConcurrentHashMap<>();
     /** Receiver id -> known bound sender sign locations, for inspection and cleanup. */
@@ -56,13 +59,13 @@ public class PipeLinkIndex implements Listener {
 
     /** Returns the receiver id a sender sign at this position is bound to, or null. */
     public UUID getBoundReceiverAt(UUID world, long posKey) {
-        Map<Long, UUID> worldSenders = sendersByWorld.get(world);
+        Long2ObjectOpenHashMap<UUID> worldSenders = sendersByWorld.get(world);
         return worldSenders == null ? null : worldSenders.get(posKey);
     }
 
     /** True if this world has no sender signs at all - the common fast path. */
     public boolean hasNoSenders(UUID world) {
-        Map<Long, UUID> worldSenders = sendersByWorld.get(world);
+        Long2ObjectOpenHashMap<UUID> worldSenders = sendersByWorld.get(world);
         return worldSenders == null || worldSenders.isEmpty();
     }
 
@@ -114,7 +117,7 @@ public class PipeLinkIndex implements Listener {
 
     public void bindSender(UUID world, int x, int y, int z, UUID rid) {
         long key = posKey(x, y, z);
-        UUID prev = sendersByWorld.computeIfAbsent(world, w -> new ConcurrentHashMap<>()).put(key, rid);
+        UUID prev = sendersByWorld.computeIfAbsent(world, w -> new Long2ObjectOpenHashMap<>()).put(key, rid);
         SenderRef ref = new SenderRef(world, x, y, z);
         if (prev != null && !prev.equals(rid)) {
             Set<SenderRef> set = recvToSenders.get(prev);
@@ -135,7 +138,7 @@ public class PipeLinkIndex implements Listener {
     }
 
     private UUID removeSenderEntry(UUID world, long key) {
-        Map<Long, UUID> worldSenders = sendersByWorld.get(world);
+        Long2ObjectOpenHashMap<UUID> worldSenders = sendersByWorld.get(world);
         return worldSenders == null ? null : worldSenders.remove(key);
     }
 
@@ -235,10 +238,10 @@ public class PipeLinkIndex implements Listener {
         int cx = chunk.getX();
         int cz = chunk.getZ();
 
-        Map<Long, UUID> worldSenders = sendersByWorld.get(world);
+        Long2ObjectOpenHashMap<UUID> worldSenders = sendersByWorld.get(world);
         if (worldSenders != null && !worldSenders.isEmpty()) {
-            worldSenders.entrySet().removeIf(e -> {
-                long key = e.getKey();
+            worldSenders.long2ObjectEntrySet().removeIf(e -> {
+                long key = e.getLongKey();
                 if (unpackX(key) >> 4 != cx || unpackZ(key) >> 4 != cz)
                     return false;
                 Set<SenderRef> set = recvToSenders.get(e.getValue());
