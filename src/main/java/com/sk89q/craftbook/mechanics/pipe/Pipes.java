@@ -602,8 +602,17 @@ public class Pipes extends AbstractCraftBookMechanic {
             if (pipeFullCooldownMillis > 0) {
                 Long pausedUntil = fullBackoff.get(block.getLocation());
                 if (pausedUntil != null) {
-                    if (System.currentTimeMillis() < pausedUntil)
+                    if (System.currentTimeMillis() < pausedUntil) {
+                        // Requests carrying items (e.g. a ranged collector feeding this
+                        // piston) still buffer into the source container while paused.
+                        if (!items.isEmpty() && InventoryUtil.doesBlockHaveInventory(fac)) {
+                            InventoryHolder pausedHolder = (InventoryHolder) PaperLib.getBlockState(fac, false).getState();
+                            List<ItemStack> rest = InventoryUtil.addItemsToInventory(pausedHolder, items.toArray(new ItemStack[0]));
+                            items.clear();
+                            items.addAll(rest);
+                        }
                         return;
+                    }
                     fullBackoff.remove(block.getLocation());
                 }
             }
