@@ -50,6 +50,10 @@ import org.bukkit.event.world.WorldUnloadEvent;
 import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
 
+import it.unimi.dsi.fastutil.longs.Long2ByteOpenHashMap;
+import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
+import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
+
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -357,10 +361,17 @@ public class Pipes extends AbstractCraftBookMechanic {
 
     private static final long TYPE_CACHE_TTL_MILLIS = 5000L;
 
+    // Primitive-keyed: a boxed Long per lookup was allocated for every block visited on
+    // every pulse, and Long.valueOf only caches -128..127 so real coordinates always
+    // allocate. Single-threaded (Bukkit event dispatch), hence plain fastutil maps.
     private static final class WorldTypes {
-        final Map<Long, Material> types = new ConcurrentHashMap<>();
-        final Map<Long, Boolean> insulators = new ConcurrentHashMap<>();
-        volatile long clearedAt = System.currentTimeMillis();
+        final Long2ObjectOpenHashMap<Material> types = new Long2ObjectOpenHashMap<>();
+        final Long2ByteOpenHashMap insulators = new Long2ByteOpenHashMap();
+        long clearedAt = System.currentTimeMillis();
+
+        WorldTypes() {
+            insulators.defaultReturnValue((byte) -1);
+        }
     }
 
     private final Map<UUID, WorldTypes> typeCache = new ConcurrentHashMap<>();
@@ -379,8 +390,8 @@ public class Pipes extends AbstractCraftBookMechanic {
     private Material typeOf(Block block) {
         if (!pipeTraversalCache)
             return block.getType();
-        Map<Long, Material> types = worldTypes(block.getWorld()).types;
-        Long key = posKey(block);
+        Long2ObjectOpenHashMap<Material> types = worldTypes(block.getWorld()).types;
+        long key = posKey(block);
         Material cached = types.get(key);
         if (cached != null)
             return cached;
@@ -392,13 +403,13 @@ public class Pipes extends AbstractCraftBookMechanic {
     private boolean isInsulator(Block block) {
         if (!pipeTraversalCache)
             return pipeInsulator.equalsFuzzy(BukkitAdapter.adapt(block.getBlockData()));
-        Map<Long, Boolean> insulators = worldTypes(block.getWorld()).insulators;
-        Long key = posKey(block);
-        Boolean cached = insulators.get(key);
-        if (cached != null)
-            return cached;
+        Long2ByteOpenHashMap insulators = worldTypes(block.getWorld()).insulators;
+        long key = posKey(block);
+        byte cached = insulators.get(key); // -1 when absent
+        if (cached >= 0)
+            return cached == 1;
         boolean result = pipeInsulator.equalsFuzzy(BukkitAdapter.adapt(block.getBlockData()));
-        insulators.put(key, result);
+        insulators.put(key, (byte) (result ? 1 : 0));
         return result;
     }
 
@@ -419,7 +430,7 @@ public class Pipes extends AbstractCraftBookMechanic {
         }
     }
 
-    private void searchNearbyPipes(Block block, Set<Long> visitedPipes, List<ItemStack> items, boolean runPassThrough) {
+    private void searchNearbyPipes(Block block, LongOpenHashSet visitedPipes, List<ItemStack> items, boolean runPassThrough) {
         Deque<Block> searchQueue = new ArrayDeque<>();
         searchQueue.addFirst(block);
 
@@ -498,7 +509,7 @@ public class Pipes extends AbstractCraftBookMechanic {
         {-1, 0, 0}, {0, -1, 0}, {0, 0, -1}, {0, 0, 1}, {0, 1, 0}, {1, 0, 0}
     };
 
-    private void expandNeighbour(Block bl, Material blType, int x, int y, int z, Set<Long> visitedPipes, Deque<Block> searchQueue) {
+    private void expandNeighbour(Block bl, Material blType, int x, int y, int z, LongOpenHashSet visitedPipes, Deque<Block> searchQueue) {
         Block off = bl.getRelative(x, y, z);
         Material offType = typeOf(off);
 
@@ -648,7 +659,8 @@ public class Pipes extends AbstractCraftBookMechanic {
         // unmatched items flow past filtered pistons instead of stopping there.
         boolean runPassThrough = pipePassThrough || signFilters.passThrough;
 
-        Set<Long> visitedPipes = new HashSet<>();
+        // Primitive set: the BFS adds one key per visited block per pulse.
+        LongOpenHashSet visitedPipes = new LongOpenHashSet();
 
         if (block.getType() == Material.STICKY_PISTON) {
 

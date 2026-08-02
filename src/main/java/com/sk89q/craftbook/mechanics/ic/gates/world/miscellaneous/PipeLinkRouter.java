@@ -134,14 +134,22 @@ public class PipeLinkRouter implements Listener {
         if (index.hasNoSenders(world))
             return null;
 
-        UUID rid = index.getBoundReceiverAt(world, PipeLinkIndex.posKey(target));
+        int tx = target.getX(), ty = target.getY(), tz = target.getZ();
+
+        UUID rid = index.getBoundReceiverAt(world, PipeLinkIndex.posKey(tx, ty, tz));
         if (rid != null && SignUtil.isSign(target))
             return verifiedHit(index, world, target, rid);
 
+        // Probe the six neighbour positions by coordinate first. Every pipe event in a
+        // world that has any sender used to allocate six Block objects here, almost
+        // always to miss; now a Block is only materialised on an actual index hit.
         for (BlockFace face : NEIGHBOUR_FACES) {
+            UUID nbRid = index.getBoundReceiverAt(world,
+                    PipeLinkIndex.posKey(tx + face.getModX(), ty + face.getModY(), tz + face.getModZ()));
+            if (nbRid == null)
+                continue;
             Block nb = target.getRelative(face);
-            UUID nbRid = index.getBoundReceiverAt(world, PipeLinkIndex.posKey(nb));
-            if (nbRid == null || !SignUtil.isSign(nb))
+            if (!SignUtil.isSign(nb))
                 continue;
             Block front = SignUtil.getFrontBlock(nb);
             if (front != null && front.equals(target))
