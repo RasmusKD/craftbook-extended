@@ -198,6 +198,11 @@ public final class PipeLinkProtection {
         Plugin gp = Bukkit.getPluginManager().getPlugin("GriefPrevention");
         if (gp == null || !gp.isEnabled())
             return null;
+        return describePullDenialClaims(piston, container);
+    }
+
+    // Own method so GriefPrevention classes are never loaded when the plugin is absent.
+    private static String describePullDenialClaims(Block piston, Block container) {
         Claim containerClaim = GriefPrevention.instance.dataStore.getClaimAt(container.getLocation(), false, null);
         if (containerClaim == null)
             return null;
