@@ -645,6 +645,28 @@ public class Pipes extends AbstractCraftBookMechanic {
         };
     }
 
+    /**
+     * Fabrication guard, active only with the "pipes" debug flag.
+     *
+     * Every branch that moves an item out of a block and into the pipe's item list must
+     * also clear it from that block. The jukebox branch once did neither: it built a new
+     * ItemStack from the block state and left the original in place, so the same disc
+     * existed both in the network and in the world. An item-count ledger cannot catch
+     * that - the counts balance - so the check has to be "is it still in the source?".
+     *
+     * Call after the removal, with whatever the source reports for that slot afterwards.
+     */
+    private static void auditTaken(Block source, ItemStack taken, ItemStack stillInSource) {
+        if (taken == null || !CraftBookPlugin.isDebugFlagEnabled("pipes"))
+            return;
+        if (stillInSource == null || !ItemUtil.areItemsIdentical(taken, stillInSource))
+            return;
+        CraftBookPlugin.logger().warning("[Pipes] Fabrication: took " + taken.getType() + " x" + taken.getAmount()
+                + " from " + source.getType() + " @ " + source.getWorld().getName() + " "
+                + source.getX() + " " + source.getY() + " " + source.getZ()
+                + " but the source still holds it - the item now exists twice.");
+    }
+
     private void startPipe(Block block, List<ItemStack> items, boolean request) {
         startPipe(block, items, request, null);
     }
@@ -731,6 +753,7 @@ public class Pipes extends AbstractCraftBookMechanic {
 
                     items.add(stack);
                     sourceHolder.getInventory().setItem(slot, null);
+                    auditTaken(fac, stack, sourceHolder.getInventory().getItem(slot));
                     if (pipeStackPerPull) {
                         if (pullKey != null)
                             pullCursor.put(pullKey, slot + 1);
@@ -778,8 +801,10 @@ public class Pipes extends AbstractCraftBookMechanic {
 
                 if(!ItemUtil.doesItemPassLooseFilters(f.getInventory().getResult(), filters, exceptions))
                     return;
-                items.add(f.getInventory().getResult());
+                ItemStack takenResult = f.getInventory().getResult();
+                items.add(takenResult);
                 if (f.getInventory().getResult() != null) f.getInventory().setResult(null);
+                auditTaken(fac, takenResult, f.getInventory().getResult());
 
                 PipeSuckEvent event = new PipeSuckEvent(block, new ArrayList<>(items), fac);
                 Bukkit.getPluginManager().callEvent(event);
@@ -810,9 +835,12 @@ public class Pipes extends AbstractCraftBookMechanic {
                     // leftover kept the list non-empty, and an empty jukebox used to
                     // swallow incoming payloads because this branch never fed
                     // leftovers before the shared items.clear() below.
-                    items.add(new ItemStack(juke.getPlaying()));
+                    ItemStack takenDisc = new ItemStack(juke.getPlaying());
+                    items.add(takenDisc);
                     juke.setPlaying(Material.AIR);
                     juke.update();
+                    Material stillPlaying = ((Jukebox) fac.getState()).getPlaying();
+                    auditTaken(fac, takenDisc, stillPlaying == Material.AIR ? null : new ItemStack(stillPlaying));
                 }
 
                 if (!items.isEmpty()) {
