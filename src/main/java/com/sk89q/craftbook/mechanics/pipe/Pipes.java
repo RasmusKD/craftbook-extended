@@ -747,7 +747,16 @@ public class Pipes extends AbstractCraftBookMechanic {
                 int x = unpackX(key), y = unpackY(key), z = unpackZ(key);
                 if (!world.isChunkLoaded(x >> 4, z >> 4))
                     continue;
-                if (world.getBlockAt(x, y, z).getType() != Material.STICKY_PISTON) {
+                Block piston = world.getBlockAt(x, y, z);
+                if (piston.getType() != Material.STICKY_PISTON) {
+                    iter.remove();
+                    continue;
+                }
+                // No container in front means there is no system left to be blocked:
+                // the flag would otherwise smoke forever after the source is removed,
+                // since only a pull attempt clears it and none can ever happen again.
+                Block fac = piston.getRelative(((Piston) piston.getBlockData()).getFacing());
+                if (!InventoryUtil.doesBlockHaveInventory(fac)) {
                     iter.remove();
                     continue;
                 }
