@@ -101,6 +101,17 @@ public class PipeLinkIndex implements Listener {
         PipeLinkRouter.get().forgetReceiver(rid);
     }
 
+    /**
+     * Cache-only removal: drops the receiver from the index and the router's caches
+     * WITHOUT touching any sign PDC. Used by the router's stale-entry heal, where the
+     * source of truth must survive a transient read failure; the destructive
+     * {@link #unregisterReceiver} is reserved for a player explicitly breaking the sign.
+     */
+    public void forgetReceiverEntry(UUID rid) {
+        receivers.remove(rid);
+        PipeLinkRouter.get().forgetReceiver(rid);
+    }
+
     public void bindSender(UUID world, int x, int y, int z, UUID rid) {
         long key = posKey(x, y, z);
         UUID prev = sendersByWorld.computeIfAbsent(world, w -> new ConcurrentHashMap<>()).put(key, rid);
@@ -202,6 +213,15 @@ public class PipeLinkIndex implements Listener {
     private void indexSign(Sign sign) {
         UUID rid = PipeLink.readReceiverUUID(sign);
         if (rid != null) {
+            if (!PipeLink.isReceiverEchoValid(sign)) {
+                // Cloned PDC (WorldEdit paste, structure block): mint a fresh identity
+                // so the copy cannot hijack the original's bound senders.
+                rid = UUID.randomUUID();
+                PipeLink.writeReceiverUUID(sign, rid);
+            } else if (!PipeLink.hasReceiverEcho(sign)) {
+                // Legacy binding from before the echo existed; backfill it.
+                PipeLink.writeReceiverUUID(sign, rid);
+            }
             registerReceiver(rid, sign.getWorld().getUID(), sign.getX(), sign.getY(), sign.getZ());
         }
         UUID bound = PipeLink.readBoundReceiverUUID(sign);

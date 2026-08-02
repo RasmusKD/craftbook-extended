@@ -19,6 +19,7 @@ public final class PipeLink {
 
     public static final NamespacedKey SEND_BOUND = new NamespacedKey("craftbook", "pipe_send_bound");
     public static final NamespacedKey RECV_UUID = new NamespacedKey("craftbook", "pipe_recv_uuid");
+    public static final NamespacedKey RECV_POS = new NamespacedKey("craftbook", "pipe_recv_pos");
 
     private PipeLink() {
     }
@@ -26,7 +27,29 @@ public final class PipeLink {
     public static void writeReceiverUUID(Sign receiverSign, UUID id) {
         PersistentDataContainer pdc = receiverSign.getPersistentDataContainer();
         pdc.set(RECV_UUID, PersistentDataType.STRING, id.toString());
+        pdc.set(RECV_POS, PersistentDataType.STRING, posEcho(receiverSign));
         receiverSign.update(true, false);
+    }
+
+    private static String posEcho(Sign sign) {
+        return sign.getWorld().getUID() + ":" + sign.getX() + "," + sign.getY() + "," + sign.getZ();
+    }
+
+    /**
+     * Whether the sign's stored position echo matches where it actually stands. WorldEdit
+     * paste and structure blocks clone tile entities including the PDC, so only something
+     * derived from the sign's own position can tell an original from a copy - a copy must
+     * never inherit the original's identity and steal its senders. Signs without an echo
+     * (bound before the echo existed) are accepted; callers backfill via
+     * {@link #writeReceiverUUID}.
+     */
+    public static boolean isReceiverEchoValid(Sign sign) {
+        String echo = sign.getPersistentDataContainer().get(RECV_POS, PersistentDataType.STRING);
+        return echo == null || echo.equals(posEcho(sign));
+    }
+
+    public static boolean hasReceiverEcho(Sign sign) {
+        return sign.getPersistentDataContainer().has(RECV_POS, PersistentDataType.STRING);
     }
 
     public static UUID readReceiverUUID(Sign receiverSign) {

@@ -184,7 +184,16 @@ public final class PipeLinkProtection {
         Claim pistonClaim = GriefPrevention.instance.dataStore.getClaimAt(piston.getLocation(), false, null);
         if (pistonClaim == null)
             return false;
-        return java.util.Objects.equals(containerClaim.getOwnerID(), pistonClaim.getOwnerID());
+        return sameClaimOwner(containerClaim, pistonClaim);
+    }
+
+    // Admin claims carry a null owner id, so a raw owner comparison would let a piston
+    // in ANY admin claim pull containers in ANY OTHER admin claim (spawn shops, event
+    // areas). With a null owner on either side, only the same claim qualifies.
+    private static boolean sameClaimOwner(Claim a, Claim b) {
+        if (a.getOwnerID() == null || b.getOwnerID() == null)
+            return java.util.Objects.equals(a.getID(), b.getID());
+        return a.getOwnerID().equals(b.getOwnerID());
     }
 
     /**
@@ -209,7 +218,7 @@ public final class PipeLinkProtection {
         Claim pistonClaim = GriefPrevention.instance.dataStore.getClaimAt(piston.getLocation(), false, null);
         if (pistonClaim == null)
             return "containeren står i " + containerClaim.getOwnerName() + "s claim, men pistonen står uden for claim";
-        if (!java.util.Objects.equals(containerClaim.getOwnerID(), pistonClaim.getOwnerID()))
+        if (!sameClaimOwner(containerClaim, pistonClaim))
             return "containeren står i " + containerClaim.getOwnerName() + "s claim, men pistonen står i " + pistonClaim.getOwnerName() + "s claim";
         return null;
     }

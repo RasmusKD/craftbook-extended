@@ -40,6 +40,29 @@ public class PipeLinkRouter implements Listener {
     private static final int MAX_CHAIN_DEPTH = 16;
     private static int chainDepth = 0;
 
+    /**
+     * Link edges the current top-level operation is already traversing. The event-borne
+     * teleport keys only follow request events, so put- and suck-driven loops (the
+     * default topology - a pipe delivering into a sender sign) never carried them; this
+     * set guards all three entry points uniformly. Single-threaded by Bukkit's event
+     * dispatch, cleaned in finally.
+     */
+    private final Set<String> activeTeleports = new java.util.HashSet<>();
+
+    /** Last warn time per message key, so a clocked loop cannot spam the log at pulse rate. */
+    private final Map<String, Long> lastWarn = new java.util.HashMap<>();
+
+    private void warnThrottled(String key, String message) {
+        long now = System.currentTimeMillis();
+        Long last = lastWarn.get(key);
+        if (last != null && now - last < 5000L)
+            return;
+        if (lastWarn.size() > 256)
+            lastWarn.clear();
+        lastWarn.put(key, now);
+        Bukkit.getLogger().warning(message);
+    }
+
     /** Last candidate index that accepted items, per receiver, so steady-state transfers probe once. */
     private final Map<UUID, Integer> lastGoodCandidate = new ConcurrentHashMap<>();
 
@@ -75,7 +98,9 @@ public class PipeLinkRouter implements Listener {
 
     @EventHandler(ignoreCancelled = true)
     public void onRequest(PipeRequestEvent e) {
-        SenderHit hit = findSender(e.getBlock(), false);
+        // includeBack matches onSuck: a sender sign mounted ON the piston must route
+        // magnet/hop-driven requests the same way it routes redstone-driven pulls.
+        SenderHit hit = findSender(e.getBlock(), true);
         if (hit == null)
             return;
         List<ItemStack> remaining = sendThroughLink(hit.signBlock, hit.receiverId, e.getItems(), e.getUsedTeleportPairs());
@@ -151,6 +176,12 @@ public class PipeLinkRouter implements Listener {
      * items if anything was accepted, or null if nothing was (caller keeps its items).
      */
     List<ItemStack> sendThroughLink(Block senderSignBlock, UUID receiverId, List<ItemStack> items, Set<String> existingTeleports) {
+        // Empty pulses reach here routinely (every redstone pulse on a piston facing
+        // glass fires an empty suck event); without this guard each one probed up to
+        // five candidates, causing real pulls in the receiver's network.
+        if (items.isEmpty())
+            return null;
+
         Long blockedUntil = deliveryBackoff.get(receiverId);
         if (blockedUntil != null) {
             if (System.currentTimeMillis() < blockedUntil)
@@ -165,8 +196,11 @@ public class PipeLinkRouter implements Listener {
         if (!SignUtil.isSign(recvSign)
                 || !(io.papermc.lib.PaperLib.getBlockState(recvSign, false).getState() instanceof org.bukkit.block.Sign recvState)
                 || !receiverId.equals(PipeLink.readReceiverUUID(recvState))) {
-            // Stale index entry - the sign is gone or was replaced.
-            index.unregisterReceiver(receiverId);
+            // Stale index entry - drop the CACHE entry only. unregisterReceiver would
+            // also erase SEND_BOUND from every sender's PDC, letting one failed read
+            // of the receiver sign permanently unbind a whole build; the destructive
+            // form is reserved for a player explicitly breaking the sign.
+            index.forgetReceiverEntry(receiverId);
             return null;
         }
 
@@ -180,14 +214,23 @@ public class PipeLinkRouter implements Listener {
 
         String key = PipeRequestEvent.buildTeleportKey(senderSignBlock, recvSign);
         if (existingTeleports != null && existingTeleports.contains(key)) {
-            Bukkit.getLogger().warning("[Pipes] PipeLink loop detected: " + key);
+            warnThrottled(key, "[Pipes] PipeLink loop detected: " + key);
+            deliveryBackoff.put(receiverId, System.currentTimeMillis() + RETRY_COOLDOWN_MILLIS);
             return null;
         }
 
         // Links can chain into each other; keep a hard depth limit so a badly built loop
         // degrades into a warning instead of a stack overflow.
         if (chainDepth >= MAX_CHAIN_DEPTH) {
-            Bukkit.getLogger().warning("[Pipes] PipeLink chain deeper than " + MAX_CHAIN_DEPTH + " links, aborting at: " + key);
+            warnThrottled("depth:" + key, "[Pipes] PipeLink chain deeper than " + MAX_CHAIN_DEPTH + " links, aborting at: " + key);
+            return null;
+        }
+
+        if (!activeTeleports.add(key)) {
+            // This edge is already being traversed by the running operation: a put- or
+            // suck-driven loop the event-borne keys cannot see.
+            warnThrottled(key, "[Pipes] PipeLink loop detected: " + key);
+            deliveryBackoff.put(receiverId, System.currentTimeMillis() + RETRY_COOLDOWN_MILLIS);
             return null;
         }
 
@@ -217,6 +260,7 @@ public class PipeLinkRouter implements Listener {
             return null;
         } finally {
             chainDepth--;
+            activeTeleports.remove(key);
         }
     }
 

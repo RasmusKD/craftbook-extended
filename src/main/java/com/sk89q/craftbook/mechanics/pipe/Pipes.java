@@ -197,7 +197,10 @@ public class Pipes extends AbstractCraftBookMechanic {
         }
     }
 
-    private static final long CACHE_TTL_MILLIS = 5 * 60 * 1000L;
+    // Short TTL: the cache only needs to collapse the per-pulse cost of clocked
+    // pistons; a long window lets eventless sign changes (WorldEdit, plugin API)
+    // mis-route items rather than merely delay a reparse.
+    private static final long CACHE_TTL_MILLIS = 10 * 1000L;
 
     private final Map<Location, CachedFilters> filterCache = new ConcurrentHashMap<>();
 
@@ -277,30 +280,54 @@ public class Pipes extends AbstractCraftBookMechanic {
         invalidateTypeCacheAt(event.getBlock());
     }
 
-    // Rare bulk block changes just drop the whole per-world type cache.
+    // Bulk block changes invalidate exactly the touched positions in BOTH caches.
+    // The old whole-world type-cache wipe made piston-heavy servers pay full reparse
+    // constantly, while the filter cache was not invalidated at all - letting a sign
+    // destroyed by TNT or moved by a piston keep filtering (and keep satisfying
+    // require-sign) for the whole TTL.
+    private void invalidateBothCachesAt(Block block) {
+        invalidateTypeCacheAt(block);
+        invalidateFilterCacheAround(block.getLocation());
+        // A retracted piston is pushable, so a pipe's sticky piston can be relocated
+        // by another piston with no BlockBreakEvent; drop its per-piston state too.
+        pullCursor.remove(block.getLocation());
+        fullBackoff.remove(block.getLocation());
+    }
+
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onBlockExplode(BlockExplodeEvent event) {
-        clearTypeCache(event.getBlock().getWorld());
+        invalidateBothCachesAt(event.getBlock());
+        for (Block b : event.blockList())
+            invalidateBothCachesAt(b);
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onEntityExplode(EntityExplodeEvent event) {
-        clearTypeCache(event.getEntity().getWorld());
+        for (Block b : event.blockList())
+            invalidateBothCachesAt(b);
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onPistonExtend(BlockPistonExtendEvent event) {
-        clearTypeCache(event.getBlock().getWorld());
+        invalidateBothCachesAt(event.getBlock());
+        for (Block b : event.getBlocks()) {
+            invalidateBothCachesAt(b);
+            invalidateBothCachesAt(b.getRelative(event.getDirection()));
+        }
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onPistonRetract(BlockPistonRetractEvent event) {
-        clearTypeCache(event.getBlock().getWorld());
+        invalidateBothCachesAt(event.getBlock());
+        for (Block b : event.getBlocks()) {
+            invalidateBothCachesAt(b);
+            invalidateBothCachesAt(b.getRelative(event.getDirection()));
+        }
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onEntityChangeBlock(EntityChangeBlockEvent event) {
-        clearTypeCache(event.getBlock().getWorld());
+        invalidateBothCachesAt(event.getBlock());
     }
 
     @EventHandler
@@ -660,8 +687,9 @@ public class Pipes extends AbstractCraftBookMechanic {
                     || facType == Material.DECORATED_POT
                     || Tag.SHULKER_BOXES.isTagged(facType)) {
                 InventoryHolder sourceHolder = (InventoryHolder) PaperLib.getBlockState(fac, false).getState();
-                ItemStack[] contents = sourceHolder.getInventory().getContents();
-                int slots = contents.length;
+                // Per-slot reads instead of getContents(): that call copies the whole
+                // inventory array every pulse just to pull one stack.
+                int slots = sourceHolder.getInventory().getSize();
 
                 // Scan starting after the slot pulled last pulse, so a stack no output
                 // accepts (returned as leftovers) cannot block everything behind it.
@@ -674,7 +702,7 @@ public class Pipes extends AbstractCraftBookMechanic {
 
                 for (int off = 0; off < slots; off++) {
                     int slot = (startSlot + off) % slots;
-                    ItemStack stack = contents[slot];
+                    ItemStack stack = sourceHolder.getInventory().getItem(slot);
 
                     if (!ItemUtil.isStackValid(stack))
                         continue;
@@ -714,7 +742,7 @@ public class Pipes extends AbstractCraftBookMechanic {
                         fullBackoff.put(block.getLocation(), System.currentTimeMillis() + pipeFullCooldownMillis);
 
                     if (facType == Material.CRAFTER)
-                        leftovers.addAll(InventoryUtil.addItemsToCrafter((Crafter) fac.getState(), items.toArray(new ItemStack[items.size()])));
+                        leftovers.addAll(InventoryUtil.addItemsToCrafter((Crafter) PaperLib.getBlockState(fac, false).getState(), items.toArray(new ItemStack[items.size()])));
                     else {
                         for (ItemStack item : items) {
                             if (item == null) continue;
@@ -757,28 +785,29 @@ public class Pipes extends AbstractCraftBookMechanic {
                 Jukebox juke = (Jukebox) fac.getState();
 
                 if (juke.getPlaying() != Material.AIR) {
+                    // Take the disc out BEFORE the event fires. "The disc left the
+                    // jukebox" must be a fact, not inferred from the item list after
+                    // delivery - the old inference duplicated the disc whenever any
+                    // leftover kept the list non-empty, and an empty jukebox used to
+                    // swallow incoming payloads because this branch never fed
+                    // leftovers before the shared items.clear() below.
                     items.add(new ItemStack(juke.getPlaying()));
+                    juke.setPlaying(Material.AIR);
+                    juke.update();
+                }
 
+                if (!items.isEmpty()) {
                     PipeSuckEvent event = new PipeSuckEvent(block, new ArrayList<>(items), fac);
                     Bukkit.getPluginManager().callEvent(event);
                     items.clear();
                     items.addAll(event.getItems());
 
-                    if (!event.isCancelled()) {
+                    if (!event.isCancelled() && !items.isEmpty()) {
                         visitedPipes.add(posKey(fac));
                         searchNearbyPipes(block, visitedPipes, items, runPassThrough);
                     }
-
-                    if (!items.isEmpty()) {
-                        for (ItemStack item : items) {
-                            if (!ItemUtil.isStackValid(item)) continue;
-                            block.getWorld().dropItem(BlockUtil.getBlockCentre(block), item);
-                        }
-                    } else {
-                        juke.setPlaying(Material.AIR);
-                        juke.update();
-                    }
                 }
+                leftovers.addAll(items);
             } else {
                 PipeSuckEvent event = new PipeSuckEvent(block, new ArrayList<>(items), fac);
                 Bukkit.getPluginManager().callEvent(event);
@@ -826,7 +855,7 @@ public class Pipes extends AbstractCraftBookMechanic {
 
             if (!leftovers.isEmpty()) {
                 if (hopReturn != null && InventoryUtil.doesBlockHaveInventory(hopReturn)) {
-                    InventoryHolder holder = (InventoryHolder) hopReturn.getState();
+                    InventoryHolder holder = (InventoryHolder) PaperLib.getBlockState(hopReturn, false).getState();
                     leftovers = InventoryUtil.addItemsToInventory(holder, leftovers.toArray(new ItemStack[0]));
                 }
                 Block dropAt = hopReturn != null ? hopReturn : block;
@@ -852,7 +881,9 @@ public class Pipes extends AbstractCraftBookMechanic {
         }
     }
 
-    @EventHandler(priority = EventPriority.HIGH)
+    // ignoreCancelled: the link router cancels requests it has delivered; running anyway
+    // would pull a fresh, unrequested stack out of the piston's source container.
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onPipeRequest(PipeRequestEvent event) {
 
         boolean stickyStart = event.getBlock().getType() == Material.STICKY_PISTON;

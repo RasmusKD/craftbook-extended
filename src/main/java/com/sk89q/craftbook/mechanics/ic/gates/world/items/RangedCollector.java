@@ -88,6 +88,9 @@ public class RangedCollector extends AbstractSelfTriggeredIC {
 
         include = !getLine(3).startsWith("-");
 
+        // load() can run more than once for the same IC; without this the filter list
+        // accumulates duplicates and the per-item filter loop grows unboundedly.
+        filters.clear();
         for(String bit : getLine(3).replace("-","").split(",")) {
             if (bit.trim().length() > 0) {
                 ItemStack item = ItemSyntax.getItem(bit);
@@ -184,6 +187,11 @@ public class RangedCollector extends AbstractSelfTriggeredIC {
                 for (ItemStack left : event.getItems())
                     if (left != null)
                         outstanding += left.getAmount();
+                if (outstanding <= 0) {
+                    // Non-empty list summing to zero is still "everything consumed".
+                    entity.remove();
+                    return true;
+                }
                 if (outstanding < stack.getAmount()) {
                     ItemStack trimmed = stack.clone();
                     trimmed.setAmount(outstanding);
@@ -204,15 +212,26 @@ public class RangedCollector extends AbstractSelfTriggeredIC {
             // Add the items to a container, and destroy them.
             for (Item entity : itemsForChest) {
                 ItemStack stack = entity.getItemStack();
-                List<ItemStack> leftovers = InventoryUtil.addItemsToInventory(chestState, false, stack);
-                if (leftovers.isEmpty()) {
+                int before = stack.getAmount();
+                // Clone before handing over: addItem mutates its argument in place and
+                // returns that same object as the leftover, so identity comparisons are
+                // meaningless and the entity's own stack must only ever change through
+                // an explicit setItemStack below.
+                List<ItemStack> leftovers = InventoryUtil.addItemsToInventory(chestState, false, stack.clone());
+                int remaining = 0;
+                for (ItemStack l : leftovers)
+                    if (l != null)
+                        remaining += l.getAmount();
+                if (remaining >= before)
+                    continue; // full container, nothing moved - do not signal a collection
+                collected = true;
+                if (remaining <= 0) {
                     entity.remove();
-                    collected = true;
-                } else if (ItemUtil.areItemsIdentical(leftovers.get(0), stack) && leftovers.get(0).getAmount() != stack.getAmount()) {
-                    entity.setItemStack(leftovers.get(0));
-                    collected = true;
+                } else {
+                    ItemStack trimmed = stack.clone();
+                    trimmed.setAmount(remaining);
+                    entity.setItemStack(trimmed);
                 }
-                // A full container moves nothing; the IC must not signal a collection then.
             }
 
             //if (collected) {

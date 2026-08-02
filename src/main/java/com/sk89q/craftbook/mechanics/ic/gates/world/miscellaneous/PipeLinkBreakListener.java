@@ -10,8 +10,9 @@ import org.bukkit.event.block.BlockBreakEvent;
 import java.util.UUID;
 
 /**
- * Cleans up PipeLink bindings when a sender or receiver sign is broken. The sign's
- * persistent data decides what it was; no text matching involved.
+ * Cleans up PipeLink bindings when a sender or receiver sign is broken. The cleanup in
+ * onBreak is PDC-driven; the break GUARD below deliberately matches sign text instead,
+ * so an unbound-but-labelled sign is also protected while its owner is mid-binding.
  */
 public class PipeLinkBreakListener implements Listener {
 

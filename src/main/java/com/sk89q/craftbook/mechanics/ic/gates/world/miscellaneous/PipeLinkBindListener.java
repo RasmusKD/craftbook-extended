@@ -76,6 +76,10 @@ public class PipeLinkBindListener implements Listener {
             // Clicking a receiver always (re)selects it; sender clicks bind to the last
             // selected receiver, so re-clicking a sender after picking a new receiver
             // simply rebinds it.
+            if (!hasLinkPermission(p, "mc1281")) {
+                p.sendMessage(ChatColor.RED + "[Pipes] Du mangler permission til PipeLink-receivers (craftbook.ic.mc1281).");
+                return;
+            }
             if (!PipeLinkProtection.isWorldAllowed(clicked.getWorld())) {
                 p.sendMessage(ChatColor.RED + "[Pipes] PipeLink er slået fra i denne verden.");
                 return;
@@ -86,8 +90,12 @@ public class PipeLinkBindListener implements Listener {
                 return;
             }
             UUID rid = PipeLink.readReceiverUUID(clicked);
-            if (rid == null) {
+            if (rid == null || !PipeLink.isReceiverEchoValid(clicked)) {
+                // No identity yet, or a PDC cloned from another sign (WorldEdit paste):
+                // mint a fresh one - a copy must never inherit the original's senders.
                 rid = UUID.randomUUID();
+                PipeLink.writeReceiverUUID(clicked, rid);
+            } else if (!PipeLink.hasReceiverEcho(clicked)) {
                 PipeLink.writeReceiverUUID(clicked, rid);
             }
             PipeLinkIndex.get().registerReceiver(rid, clicked.getWorld().getUID(), clicked.getX(), clicked.getY(), clicked.getZ());
@@ -97,6 +105,10 @@ public class PipeLinkBindListener implements Listener {
         }
 
         if (isSenderIC(clicked)) {
+            if (!hasLinkPermission(p, "mc1282")) {
+                p.sendMessage(ChatColor.RED + "[Pipes] Du mangler permission til PipeLink-senders (craftbook.ic.mc1282).");
+                return;
+            }
             UUID rid = lastReceiver.get(pid);
             if (rid == null) {
                 p.sendMessage(ChatColor.RED + "[Pipes] Klik først et Receiver-skilt ([MC1281]) med Blaze Rod.");
@@ -107,6 +119,14 @@ public class PipeLinkBindListener implements Listener {
         }
 
         p.sendMessage(ChatColor.RED + "[Pipes] Dette er ikke et PipeLink-skilt.");
+    }
+
+    /**
+     * The bind tool grants the capability the IC's sign-creation flow would have gated,
+     * so it must honour the same permission nodes - sign text alone is not authorisation.
+     */
+    private static boolean hasLinkPermission(Player p, String icId) {
+        return p.hasPermission("craftbook.ic." + icId) || p.hasPermission("craftbook.ic.safe." + icId);
     }
 
     private void doBind(Player p, Sign senderSign, UUID rid) {
@@ -151,6 +171,13 @@ public class PipeLinkBindListener implements Listener {
     }
 
     private void handleInspect(Player p, Sign clicked) {
+        // Link topology (every bound sender's coordinates) is exactly the information a
+        // claim protects; require the same trust to read it as to create it.
+        String inspectDenial = PipeLinkProtection.describeDenial(p, clicked.getBlock());
+        if (inspectDenial != null) {
+            p.sendMessage(ChatColor.RED + "[Pipes] Du mangler trust i " + inspectDenial + "s claim til at inspicere links her (kræver /" + PipeLinkProtection.requiredTrustName() + ").");
+            return;
+        }
         if (isSenderIC(clicked)) {
             UUID rid = PipeLink.readBoundReceiverUUID(clicked);
             if (rid == null) {
