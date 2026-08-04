@@ -67,6 +67,8 @@ public final class PipeNetworks implements Listener {
 
     static final class Net {
         long entryKey;
+        /** Largest packed position of the last traversal - a real block at the "far end". */
+        long maxKey;
         int size;
         long moved;
         long lastActive;
@@ -90,11 +92,14 @@ public final class PipeNetworks implements Listener {
         if (visited.isEmpty())
             return;
         long netKey = Long.MAX_VALUE;
+        long maxKey = Long.MIN_VALUE;
         LongIterator it = visited.iterator();
         while (it.hasNext()) {
             long k = it.nextLong();
             if (k < netKey)
                 netKey = k;
+            if (k > maxKey)
+                maxKey = k;
         }
         Long2ObjectOpenHashMap<Net> nets = byWorld.computeIfAbsent(world.getUID(), w -> new Long2ObjectOpenHashMap<>());
         Net net = nets.get(netKey);
@@ -105,6 +110,7 @@ public final class PipeNetworks implements Listener {
             nets.put(netKey, net);
         }
         net.entryKey = entryKey;
+        net.maxKey = maxKey;
         net.size = Math.max(net.size, visited.size());
         net.moved += moved;
         net.lastActive = System.currentTimeMillis();
@@ -190,10 +196,23 @@ public final class PipeNetworks implements Listener {
                     + w.getName() + " " + x + " " + y + " " + z);
             List<String> lore = new ArrayList<>();
             lore.add(ChatColor.GRAY + "Størrelse: " + ChatColor.WHITE + "mindst " + net.size + " blokke");
-            String claimOwner = com.sk89q.craftbook.mechanics.ic.gates.world.miscellaneous.PipeLinkProtection
-                    .claimOwnerAt(new Location(w, x, y, z));
-            if (claimOwner != null)
-                lore.add(ChatColor.GRAY + "Claim-ejer: " + ChatColor.WHITE + claimOwner);
+            // The block list is not kept, but three real blocks of the network are known:
+            // the pulsing piston and both extremes of the traversal. Probing all three
+            // catches networks crossing claim borders without any per-pulse cost.
+            java.util.LinkedHashSet<String> owners = new java.util.LinkedHashSet<>();
+            boolean partlyUnclaimed = false;
+            for (long probe : new long[] { net.entryKey, row.netKey(), net.maxKey }) {
+                String owner = com.sk89q.craftbook.mechanics.ic.gates.world.miscellaneous.PipeLinkProtection
+                        .claimOwnerAt(new Location(w, unpackX(probe), unpackY(probe), unpackZ(probe)));
+                if (owner == null)
+                    partlyUnclaimed = true;
+                else
+                    owners.add(owner);
+            }
+            if (!owners.isEmpty())
+                lore.add(ChatColor.GRAY + (owners.size() > 1 ? "Claim-ejere: " : "Claim-ejer: ")
+                        + ChatColor.WHITE + String.join(ChatColor.GRAY + ", " + ChatColor.WHITE, owners)
+                        + (partlyUnclaimed ? ChatColor.DARK_GRAY + " (delvist i claim)" : ""));
             lore.add(ChatColor.GRAY + "Items flyttet: " + ChatColor.WHITE + net.moved
                     + ChatColor.DARK_GRAY + " (siden opstart)");
             lore.add(ChatColor.GRAY + "Sidste puls: " + ChatColor.WHITE + ago(now - net.lastActive));
