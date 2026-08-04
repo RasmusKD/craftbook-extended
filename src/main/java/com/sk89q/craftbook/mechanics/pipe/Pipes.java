@@ -355,6 +355,17 @@ public class Pipes extends AbstractCraftBookMechanic {
         typeCache.remove(event.getWorld().getUID());
     }
 
+    /**
+     * Per-pulse observations, threaded through the traversal so a totally failed pulse
+     * can say WHY: no output stations at all, filters that matched nothing, outputs
+     * without a container, or containers that are simply full.
+     */
+    static final class PulseStats {
+        int outputs;    // output stations encountered (non-passthrough piston/dropper)
+        int filterHits; // stations where the filters matched at least one item
+        int attempts;   // of those, stations with a real target to offer items to
+    }
+
     /* Traversal ------------------------------------------------------------------------ */
 
     private static long posKey(int x, int y, int z) {
@@ -461,7 +472,7 @@ public class Pipes extends AbstractCraftBookMechanic {
         }
     }
 
-    private void searchNearbyPipes(Block block, LongOpenHashSet visitedPipes, List<ItemStack> items, boolean runPassThrough) {
+    private void searchNearbyPipes(Block block, LongOpenHashSet visitedPipes, List<ItemStack> items, boolean runPassThrough, PulseStats stats) {
         Deque<Block> searchQueue = new ArrayDeque<>();
         searchQueue.addFirst(block);
 
@@ -473,11 +484,11 @@ public class Pipes extends AbstractCraftBookMechanic {
                 CachedFilters signFilters = getFilters(bl);
                 // A [Pipe] sign marked 'pass'/'bypass'/'b' turns this piston into a plain
                 // conduit: nothing is deposited here and items flow through untouched.
-                if (!signFilters.passThrough && !processPistonOutput(bl, items, signFilters, runPassThrough))
+                if (!signFilters.passThrough && !processPistonOutput(bl, items, signFilters, runPassThrough, stats))
                     continue;
             } else if (blType == Material.DROPPER) {
                 CachedFilters signFilters = getFilters(bl);
-                if (!signFilters.passThrough && !processDropperOutput(bl, items, signFilters, runPassThrough))
+                if (!signFilters.passThrough && !processDropperOutput(bl, items, signFilters, runPassThrough, stats))
                     continue;
             }
 
@@ -576,10 +587,12 @@ public class Pipes extends AbstractCraftBookMechanic {
      * search should end at this piston (vanilla behaviour when its filters match nothing),
      * true when the remaining items should continue past it.
      */
-    private boolean processPistonOutput(Block bl, List<ItemStack> items, CachedFilters signFilters, boolean runPassThrough) {
+    private boolean processPistonOutput(Block bl, List<ItemStack> items, CachedFilters signFilters, boolean runPassThrough, PulseStats stats) {
         // The block data is read live, so a stale type cache can never mis-deposit.
         if (!(bl.getBlockData() instanceof Piston p))
             return true;
+
+        stats.outputs++;
 
         List<ItemStack> filteredItems = new ArrayList<>(VerifyUtil.withoutNulls(ItemUtil.filterItemsLoose(items, signFilters.filters, signFilters.exceptions)));
 
@@ -594,6 +607,8 @@ public class Pipes extends AbstractCraftBookMechanic {
         if(filteredItems.isEmpty())
             return runPassThrough;
 
+        stats.filterHits++;
+
         List<ItemStack> newItems = new ArrayList<>();
 
         Block fac = bl.getRelative(p.getFacing());
@@ -603,9 +618,11 @@ public class Pipes extends AbstractCraftBookMechanic {
 
         if (!event.isCancelled()) {
             if (InventoryUtil.doesBlockHaveInventory(fac)) {
+                stats.attempts++;
                 InventoryHolder holder = (InventoryHolder) PaperLib.getBlockState(fac, false).getState();
                 newItems.addAll(InventoryUtil.addItemsToInventory(holder, event.getItems().toArray(new ItemStack[event.getItems().size()])));
             } else if (fac.getType() == Material.JUKEBOX) {
+                stats.attempts++;
                 Jukebox juke = (Jukebox) fac.getState();
                 List<ItemStack> its = new ArrayList<>(event.getItems());
                 // Only an empty jukebox accepts a disc. The test used to be inverted,
@@ -640,14 +657,18 @@ public class Pipes extends AbstractCraftBookMechanic {
     /**
      * Same contract as {@link #processPistonOutput}, for droppers.
      */
-    private boolean processDropperOutput(Block bl, List<ItemStack> items, CachedFilters signFilters, boolean runPassThrough) {
+    private boolean processDropperOutput(Block bl, List<ItemStack> items, CachedFilters signFilters, boolean runPassThrough, PulseStats stats) {
+        stats.outputs++;
         List<ItemStack> filteredItems = new ArrayList<>(VerifyUtil.withoutNulls(ItemUtil.filterItemsLoose(items, signFilters.filters, signFilters.exceptions)));
 
         if(filteredItems.isEmpty())
             return runPassThrough;
 
+        stats.filterHits++;
+
         if (bl.getType() != Material.DROPPER)
             return true;
+        stats.attempts++;
         Dropper dropper = (Dropper) PaperLib.getBlockState(bl, false).getState();
         List<ItemStack> newItems =
                 new ArrayList<>(dropper.getInventory().addItem(filteredItems.toArray(new ItemStack[filteredItems.size()])).values());
@@ -812,6 +833,7 @@ public class Pipes extends AbstractCraftBookMechanic {
             List<ItemStack> leftovers = new ArrayList<>();
             int movedThisPulse = 0;
             boolean blockedThisPulse = false;
+            PulseStats stats = new PulseStats();
 
             Piston p = (Piston) block.getBlockData();
             Block fac = block.getRelative(p.getFacing());
@@ -900,7 +922,7 @@ public class Pipes extends AbstractCraftBookMechanic {
                 items.addAll(event.getItems());
                 if(!event.isCancelled()) {
                     visitedPipes.add(posKey(fac));
-                    searchNearbyPipes(block, visitedPipes, items, runPassThrough);
+                    searchNearbyPipes(block, visitedPipes, items, runPassThrough, stats);
                 }
 
                 if (!items.isEmpty()) {
@@ -956,7 +978,7 @@ public class Pipes extends AbstractCraftBookMechanic {
                 items.addAll(event.getItems());
                 if(!event.isCancelled()) {
                     visitedPipes.add(posKey(fac));
-                    searchNearbyPipes(block, visitedPipes, items, runPassThrough);
+                    searchNearbyPipes(block, visitedPipes, items, runPassThrough, stats);
                 }
 
                 if (!items.isEmpty()) {
@@ -995,7 +1017,7 @@ public class Pipes extends AbstractCraftBookMechanic {
 
                     if (!event.isCancelled() && !items.isEmpty()) {
                         visitedPipes.add(posKey(fac));
-                        searchNearbyPipes(block, visitedPipes, items, runPassThrough);
+                        searchNearbyPipes(block, visitedPipes, items, runPassThrough, stats);
                     }
                 }
                 leftovers.addAll(items);
@@ -1006,7 +1028,7 @@ public class Pipes extends AbstractCraftBookMechanic {
                 items.addAll(event.getItems());
                 if(!event.isCancelled() && !items.isEmpty()) {
                     visitedPipes.add(posKey(fac));
-                    searchNearbyPipes(block, visitedPipes, items, runPassThrough);
+                    searchNearbyPipes(block, visitedPipes, items, runPassThrough, stats);
                 }
                 leftovers.addAll(items);
             }
@@ -1027,8 +1049,10 @@ public class Pipes extends AbstractCraftBookMechanic {
 
             // Free observability: the traversal already visited every block, so size and
             // throughput are recorded as a side effect. Feeds the /pipenetworks menu.
-            PipeNetworks.record(block.getWorld(), visitedPipes, posKey(block), movedThisPulse, blockedThisPulse);
+            PipeNetworks.record(block.getWorld(), visitedPipes, posKey(block), movedThisPulse, blockedThisPulse,
+                    PipeNetworks.classify(stats));
         } else if (request && isValidPipeBlock(block.getType())) {
+            PulseStats stats = new PulseStats();
             // PipeLink hop: items arriving from a linked sender are injected into the pipe
             // network at this block, which need not be a sticky piston.
             PipeSuckEvent event = new PipeSuckEvent(block, new ArrayList<>(items), block);
@@ -1037,7 +1061,7 @@ public class Pipes extends AbstractCraftBookMechanic {
             items.addAll(event.getItems());
             if (!event.isCancelled() && !items.isEmpty()) {
                 visitedPipes.add(posKey(block));
-                searchNearbyPipes(block, visitedPipes, items, runPassThrough);
+                searchNearbyPipes(block, visitedPipes, items, runPassThrough, stats);
             }
 
             List<ItemStack> leftovers = new ArrayList<>(items);

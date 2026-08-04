@@ -41,12 +41,37 @@ public final class PipeNetworks implements Listener {
     private static final long FORGET_AFTER_MILLIS = 10 * 60 * 1000L;
     private static final int MAX_PER_WORLD = 256;
 
+    /** Why the last totally failed pulse failed; derived from PulseStats. */
+    enum BlockReason {
+        FULL("BLOKERET - containerne er fulde"),
+        NO_OUTPUT("BLOKERET - intet output i nettet"),
+        NO_CONTAINER("BLOKERET - output uden container"),
+        FILTER("BLOKERET - ingen filtre matchede");
+
+        final String text;
+
+        BlockReason(String text) {
+            this.text = text;
+        }
+    }
+
+    static BlockReason classify(Pipes.PulseStats stats) {
+        if (stats.outputs == 0)
+            return BlockReason.NO_OUTPUT;
+        if (stats.filterHits == 0)
+            return BlockReason.FILTER;
+        if (stats.attempts == 0)
+            return BlockReason.NO_CONTAINER;
+        return BlockReason.FULL;
+    }
+
     static final class Net {
         long entryKey;
         int size;
         long moved;
         long lastActive;
         boolean blocked;
+        BlockReason reason = BlockReason.FULL;
     }
 
     private static final Map<UUID, Long2ObjectOpenHashMap<Net>> byWorld = new ConcurrentHashMap<>();
@@ -61,7 +86,7 @@ public final class PipeNetworks implements Listener {
     }
 
     /** Called from startPipe after a pulse that traversed; costs two map ops and a min-scan. */
-    static void record(World world, LongOpenHashSet visited, long entryKey, int moved, boolean blocked) {
+    static void record(World world, LongOpenHashSet visited, long entryKey, int moved, boolean blocked, BlockReason reason) {
         if (visited.isEmpty())
             return;
         long netKey = Long.MAX_VALUE;
@@ -83,10 +108,12 @@ public final class PipeNetworks implements Listener {
         net.size = Math.max(net.size, visited.size());
         net.moved += moved;
         net.lastActive = System.currentTimeMillis();
-        if (blocked)
+        if (blocked) {
             net.blocked = true;
-        else if (moved > 0)
+            net.reason = reason;
+        } else if (moved > 0) {
             net.blocked = false;
+        }
     }
 
     private static void trim(Long2ObjectOpenHashMap<Net> nets) {
@@ -147,7 +174,7 @@ public final class PipeNetworks implements Listener {
                     + ChatColor.DARK_GRAY + " (siden opstart)");
             lore.add(ChatColor.GRAY + "Sidste puls: " + ChatColor.WHITE + ago(now - net.lastActive));
             lore.add(net.blocked
-                    ? ChatColor.RED + "BLOKERET - intet output tog imod (fuldt eller mangler)"
+                    ? ChatColor.RED + net.reason.text
                     : ChatColor.GREEN + "Kører");
             lore.add(ChatColor.YELLOW + "Klik for at teleportere");
             meta.setLore(lore);
