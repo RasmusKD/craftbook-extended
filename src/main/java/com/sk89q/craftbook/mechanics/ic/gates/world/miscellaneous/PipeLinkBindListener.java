@@ -316,22 +316,43 @@ public class PipeLinkBindListener implements Listener {
     }
 
     private static void drawLinkParticles(Player p, Location a, Location b) {
-        final int points = 28;
-        final double dx = (b.getX() - a.getX()) / points;
-        final double dy = (b.getY() - a.getY()) / points;
-        final double dz = (b.getZ() - a.getZ()) / points;
+        // A line across the full span is unreadable at distance: a handful of points
+        // spread over thousands of blocks, nearly all beyond render range. Draw a dense
+        // beam from the end the PLAYER stands at, pointing toward the other end, so the
+        // direction is visible no matter how far the link reaches. Short links get the
+        // whole line as before, just denser.
+        if (!a.getWorld().equals(b.getWorld()))
+            return; // cross-dimension: no direction exists; the message carries the coords
+        Location pl = p.getLocation();
+        boolean fromA = a.distanceSquared(pl) <= b.distanceSquared(pl);
+        Location from = fromA ? a : b;
+        Location to = fromA ? b : a;
+        double dist = from.distance(to);
+        if (dist < 0.5)
+            return;
+        double ux = (to.getX() - from.getX()) / dist;
+        double uy = (to.getY() - from.getY()) / dist;
+        double uz = (to.getZ() - from.getZ()) / dist;
+        double length = Math.min(dist, 24.0);
+
+        Particle.DustOptions dust = new Particle.DustOptions(Color.AQUA, 1.2f);
+        for (double d = 0; d <= length; d += 0.5) {
+            p.spawnParticle(Particle.DUST, from.getX() + ux * d, from.getY() + uy * d, from.getZ() + uz * d, 1, dust);
+        }
+        // A travelling bright pulse toward the far end makes the direction unmistakable.
+        final double beamLength = length;
         new BukkitRunnable() {
-            int t = 0;
-            final Particle.DustOptions dust = new Particle.DustOptions(Color.AQUA, 1.2f);
+            double d = 0;
+            final Particle.DustOptions bright = new Particle.DustOptions(Color.WHITE, 1.6f);
 
             @Override
             public void run() {
-                if (t >= points) {
+                if (d > beamLength || !p.isOnline()) {
                     cancel();
                     return;
                 }
-                p.spawnParticle(Particle.DUST, a.getX() + dx * t, a.getY() + dy * t, a.getZ() + dz * t, 1, dust);
-                t++;
+                p.spawnParticle(Particle.DUST, from.getX() + ux * d, from.getY() + uy * d, from.getZ() + uz * d, 1, bright);
+                d += 1.2;
             }
         }.runTaskTimer(CraftBookPlugin.inst(), 0L, 1L);
     }
