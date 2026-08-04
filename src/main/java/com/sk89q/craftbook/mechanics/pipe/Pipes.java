@@ -51,6 +51,7 @@ import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
 
 import it.unimi.dsi.fastutil.longs.Long2ByteOpenHashMap;
+import it.unimi.dsi.fastutil.longs.LongArrayFIFOQueue;
 import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
 import it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
@@ -455,6 +456,24 @@ public class Pipes extends AbstractCraftBookMechanic {
         return result;
     }
 
+    /**
+     * Coordinate-based type read: on a cache hit no Block object exists at all. The
+     * traversal calls this once per neighbour per pulse, so on a large network the
+     * Block-based path allocated tens of thousands of CraftBlock wrappers per pulse
+     * just to ask for a Material the cache already knew.
+     */
+    private Material typeOfAt(World world, long key, int x, int y, int z) {
+        if (!pipeTraversalCache)
+            return world.getBlockAt(x, y, z).getType();
+        Long2ObjectOpenHashMap<Material> types = worldTypes(world).types;
+        Material cached = types.get(key);
+        if (cached != null)
+            return cached;
+        Material type = world.getBlockAt(x, y, z).getType();
+        types.put(key, type);
+        return type;
+    }
+
     private void invalidateTypeCacheAt(Block block) {
         WorldTypes wt = typeCache.get(block.getWorld().getUID());
         if (wt == null)
@@ -473,20 +492,26 @@ public class Pipes extends AbstractCraftBookMechanic {
     }
 
     private void searchNearbyPipes(Block block, LongOpenHashSet visitedPipes, List<ItemStack> items, boolean runPassThrough, PulseStats stats) {
-        Deque<Block> searchQueue = new ArrayDeque<>();
-        searchQueue.addFirst(block);
+        World world = block.getWorld();
+        // The queue holds packed positions, not Blocks: plain glass never needs a Block
+        // object on a cache hit. Stations (pistons/droppers) materialise one on arrival.
+        LongArrayFIFOQueue searchQueue = new LongArrayFIFOQueue();
+        searchQueue.enqueue(posKey(block));
 
         //Use the queue to search blocks.
         while (!searchQueue.isEmpty()) {
-            Block bl = searchQueue.poll();
-            Material blType = typeOf(bl);
+            long blKey = searchQueue.dequeueLong();
+            int bx = unpackX(blKey), by = unpackY(blKey), bz = unpackZ(blKey);
+            Material blType = typeOfAt(world, blKey, bx, by, bz);
             if (blType == Material.PISTON) {
+                Block bl = world.getBlockAt(bx, by, bz);
                 CachedFilters signFilters = getFilters(bl);
                 // A [Pipe] sign marked 'pass'/'bypass'/'b' turns this piston into a plain
                 // conduit: nothing is deposited here and items flow through untouched.
                 if (!signFilters.passThrough && !processPistonOutput(bl, items, signFilters, runPassThrough, stats))
                     continue;
             } else if (blType == Material.DROPPER) {
+                Block bl = world.getBlockAt(bx, by, bz);
                 CachedFilters signFilters = getFilters(bl);
                 if (!signFilters.passThrough && !processDropperOutput(bl, items, signFilters, runPassThrough, stats))
                     continue;
@@ -495,16 +520,17 @@ public class Pipes extends AbstractCraftBookMechanic {
             if (!items.isEmpty()) {
                 if (!pipesDiagonal) {
                     // Only the six direct faces can connect; skip the full 27-neighbour scan.
-                    visitedPipes.add(posKey(bl));
+                    visitedPipes.add(blKey);
                     for (int[] d : DIRECT_NEIGHBOURS) {
                         if (items.isEmpty())
                             return;
-                        expandNeighbour(bl, blType, d[0], d[1], d[2], visitedPipes, searchQueue);
+                        expandNeighbourFast(world, blType, bx, by, bz, d[0], d[1], d[2], visitedPipes, searchQueue);
                     }
                 } else {
+                    Block bl = world.getBlockAt(bx, by, bz);
                     // Mark the current block visited first, or the (0,0,0) offset below
                     // re-queues it and the whole 27-neighbour pass runs twice.
-                    visitedPipes.add(posKey(bl));
+                    visitedPipes.add(blKey);
                     //Enumerate the search queue.
                     for (int x = -1; x < 2; x++) {
                         for (int y = -1; y < 2; y++) {
@@ -551,7 +577,7 @@ public class Pipes extends AbstractCraftBookMechanic {
         {-1, 0, 0}, {0, -1, 0}, {0, 0, -1}, {0, 0, 1}, {0, 1, 0}, {1, 0, 0}
     };
 
-    private void expandNeighbour(Block bl, Material blType, int x, int y, int z, LongOpenHashSet visitedPipes, Deque<Block> searchQueue) {
+    private void expandNeighbour(Block bl, Material blType, int x, int y, int z, LongOpenHashSet visitedPipes, LongArrayFIFOQueue searchQueue) {
         Block off = bl.getRelative(x, y, z);
         Material offType = typeOf(off);
 
@@ -562,7 +588,7 @@ public class Pipes extends AbstractCraftBookMechanic {
         if(ItemUtil.isStainedGlass(blType) && ItemUtil.isStainedGlass(offType) && blType != offType) return;
 
         if(offType == Material.GLASS || ItemUtil.isStainedGlass(offType)) {
-            searchQueue.add(off);
+            searchQueue.enqueue(posKey(off));
         } else if (offType == Material.GLASS_PANE || ItemUtil.isStainedGlassPane(offType)) {
             Block offsetBlock = off.getRelative(x, y, z);
             Material offsetBlockType = typeOf(offsetBlock);
@@ -577,9 +603,48 @@ public class Pipes extends AbstractCraftBookMechanic {
                         .getStainedColor(offsetBlockType)) return;
             }
             visitedPipes.add(posKey(offsetBlock));
-            searchQueue.add(off.getRelative(x, y, z));
+            searchQueue.enqueue(posKey(offsetBlock));
         } else if(offType == Material.PISTON)
-            searchQueue.addFirst(off); //Pistons are treated with higher priority.
+            searchQueue.enqueueFirst(posKey(off)); //Pistons are treated with higher priority.
+    }
+
+    /**
+     * Coordinate-only mirror of {@link #expandNeighbour} for the six-face fast path.
+     * Exactly the same rules and visit order; the only difference is that no Block is
+     * materialised while the type cache answers.
+     */
+    private void expandNeighbourFast(World world, Material blType, int fx, int fy, int fz,
+            int dx, int dy, int dz, LongOpenHashSet visitedPipes, LongArrayFIFOQueue searchQueue) {
+        int nx = fx + dx, ny = fy + dy, nz = fz + dz;
+        long nKey = posKey(nx, ny, nz);
+        Material offType = typeOfAt(world, nKey, nx, ny, nz);
+
+        if (!isValidPipeBlock(offType)) return;
+
+        if (!visitedPipes.add(nKey)) return;
+
+        if(ItemUtil.isStainedGlass(blType) && ItemUtil.isStainedGlass(offType) && blType != offType) return;
+
+        if(offType == Material.GLASS || ItemUtil.isStainedGlass(offType)) {
+            searchQueue.enqueue(nKey);
+        } else if (offType == Material.GLASS_PANE || ItemUtil.isStainedGlassPane(offType)) {
+            int jx = nx + dx, jy = ny + dy, jz = nz + dz;
+            long jKey = posKey(jx, jy, jz);
+            Material offsetBlockType = typeOfAt(world, jKey, jx, jy, jz);
+            if (!isValidPipeBlock(offsetBlockType)) return;
+            if (visitedPipes.contains(jKey)) return;
+            if(ItemUtil.isStainedGlassPane(offType)) {
+                if((ItemUtil.isStainedGlass(blType)
+                        || ItemUtil.isStainedGlassPane(blType)) && ItemUtil.getStainedColor(offType) != ItemUtil
+                        .getStainedColor(offsetBlockType)
+                        || (ItemUtil.isStainedGlass(offsetBlockType)
+                        || ItemUtil.isStainedGlassPane(offsetBlockType)) && ItemUtil.getStainedColor(offType) != ItemUtil
+                        .getStainedColor(offsetBlockType)) return;
+            }
+            visitedPipes.add(jKey);
+            searchQueue.enqueue(jKey);
+        } else if(offType == Material.PISTON)
+            searchQueue.enqueueFirst(nKey); //Pistons are treated with higher priority.
     }
 
     /**
