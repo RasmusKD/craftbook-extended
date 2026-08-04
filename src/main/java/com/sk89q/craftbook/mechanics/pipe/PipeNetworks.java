@@ -142,9 +142,7 @@ public final class PipeNetworks implements Listener {
                     + "Netværk @ " + w.getName() + " " + x + " " + y + " " + z
                     + ChatColor.GRAY + " (mindst " + net.size + " blokke)");
             List<String> lore = new ArrayList<>();
-            lore.add(ChatColor.GRAY + "Størrelse: " + ChatColor.WHITE + "mindst " + net.size + " pipe-blokke"
-                    + ChatColor.DARK_GRAY + " (største målte gennemløb - en hurtig"
-                    + ChatColor.DARK_GRAY + " levering gennemløber kun til første kiste)");
+            lore.add(ChatColor.GRAY + "Størrelse: " + ChatColor.WHITE + "mindst " + net.size + " blokke");
             lore.add(ChatColor.GRAY + "Items flyttet: " + ChatColor.WHITE + net.moved
                     + ChatColor.DARK_GRAY + " (siden opstart)");
             lore.add(ChatColor.GRAY + "Sidste puls: " + ChatColor.WHITE + ago(now - net.lastActive));
