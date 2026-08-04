@@ -1161,7 +1161,16 @@ public class Pipes extends AbstractCraftBookMechanic {
 
             if(!EventUtil.passesFilter(event)) return;
 
+            // Any pulse that turns out expensive - chunk loads across a mega-pipe, or
+            // whatever else - throttles its own piston through the existing pause
+            // machinery, so a clocked slow pipe can never freeze the server in rhythm.
+            long pulseStart = System.nanoTime();
             startPipe(event.getBlock(), new ArrayList<>(), false);
+            if (pipeSlowPulseThrottleMillis > 0
+                    && (System.nanoTime() - pulseStart) / 1_000_000L > 100) {
+                caches(event.getBlock().getWorld()).fullBackoff.put(posKey(event.getBlock()),
+                        System.currentTimeMillis() + pipeSlowPulseThrottleMillis);
+            }
         }
     }
 
@@ -1193,6 +1202,7 @@ public class Pipes extends AbstractCraftBookMechanic {
     private boolean pipeRoundRobinPull;
     private int pipeFullCooldownMillis;
     private boolean pipeFullSmoke;
+    private long pipeSlowPulseThrottleMillis;
     private int pipeDropperDropLimit;
     private boolean pipePassThrough;
     private boolean pipeTraversalCache;
@@ -1227,6 +1237,9 @@ public class Pipes extends AbstractCraftBookMechanic {
 
         config.setComment(path + "full-pipe-cooldown", "Seconds a sticky piston waits before pulling again after a pulse where nothing could be delivered anywhere (full network). Stops full pipes wasting full traversals and vomiting items every pulse. 0 disables.");
         pipeFullCooldownMillis = config.getInt(path + "full-pipe-cooldown", 2) * 1000;
+
+        config.setComment(path + "slow-pulse-throttle", "Seconds a source piston rests after a pulse that took more than 100ms of the main thread (typically a huge pipe crossing unloaded chunks). The pulse still delivers; the rest just stops a clock from freezing the server in rhythm. 0 disables.");
+        pipeSlowPulseThrottleMillis = config.getInt(path + "slow-pulse-throttle", 10) * 1000L;
 
         config.setComment(path + "full-pipe-smoke", "Show black smoke above a paused piston while pulses arrive and its network is refusing items. Makes a blocked far end visible from the sending side, which matters for links and cross-dimension receivers.");
         pipeFullSmoke = config.getBoolean(path + "full-pipe-smoke", true);
