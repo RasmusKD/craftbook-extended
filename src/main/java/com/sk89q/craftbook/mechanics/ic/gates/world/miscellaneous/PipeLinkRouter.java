@@ -63,7 +63,10 @@ public class PipeLinkRouter implements Listener {
         unloadedWakeCooldownMillis = Math.max(0, seconds) * 1000L;
     }
 
-    private final Map<UUID, Long> lastUnloadedWake = new ConcurrentHashMap<>();
+    /** Last wake time per CHUNK (not per receiver: several receivers in one chunk must
+     * share the ration, or stacking them with staggered cooldowns would keep the chunk
+     * permanently warm anyway). Bounded by a periodic clear. */
+    private final Map<UUID, it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap> chunkWakes = new ConcurrentHashMap<>();
 
     private static final int MAX_CHAIN_DEPTH = 16;
     private static int chainDepth = 0;
@@ -101,7 +104,6 @@ public class PipeLinkRouter implements Listener {
     void forgetReceiver(UUID rid) {
         lastGoodCandidate.remove(rid);
         deliveryBackoff.remove(rid);
-        lastUnloadedWake.remove(rid);
     }
 
     /**
@@ -238,11 +240,16 @@ public class PipeLinkRouter implements Listener {
                 // Waking an unloaded chunk is rationed per receiver, so a clocked
                 // sender cannot function as a chunk loader for the far end.
                 if (unloadedWakeCooldownMillis > 0) {
+                    it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap wakes =
+                            chunkWakes.computeIfAbsent(ref.world(), k -> new it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap());
+                    long chunkKey = ((long) (ref.x() >> 4) << 32) | ((ref.z() >> 4) & 0xFFFFFFFFL);
                     long now = System.currentTimeMillis();
-                    Long lastWake = lastUnloadedWake.get(receiverId);
-                    if (lastWake != null && now - lastWake < unloadedWakeCooldownMillis)
+                    long lastWake = wakes.get(chunkKey);
+                    if (lastWake != 0L && now - lastWake < unloadedWakeCooldownMillis)
                         return null;
-                    lastUnloadedWake.put(receiverId, now);
+                    if (wakes.size() > 4096)
+                        wakes.clear();
+                    wakes.put(chunkKey, now);
                 }
             }
         }
