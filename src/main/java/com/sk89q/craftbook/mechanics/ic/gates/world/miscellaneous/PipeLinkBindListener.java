@@ -39,7 +39,16 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public class PipeLinkBindListener implements Listener {
 
-    private final Map<UUID, UUID> lastReceiver = new ConcurrentHashMap<>();
+    /**
+     * The receiver a player last selected, with where it stood at selection time - so a
+     * later bind can NAME it even after the sign is gone or its chunk evicted. Without
+     * the position, "receiveren kan ikke findes" reads like nonsense on a freshly
+     * placed sender: the player has no idea which old selection it refers to.
+     */
+    private record SelectedReceiver(UUID rid, String world, int x, int y, int z) {
+    }
+
+    private final Map<UUID, SelectedReceiver> lastReceiver = new ConcurrentHashMap<>();
 
     // Runs first and does not respect prior cancellation: other plugins (and air-click
     // events, which Bukkit fires pre-cancelled) would otherwise silently eat the click.
@@ -99,7 +108,7 @@ public class PipeLinkBindListener implements Listener {
                 PipeLink.writeReceiverUUID(clicked, rid);
             }
             PipeLinkIndex.get().registerReceiver(rid, clicked.getWorld().getUID(), clicked.getX(), clicked.getY(), clicked.getZ());
-            lastReceiver.put(pid, rid);
+            lastReceiver.put(pid, new SelectedReceiver(rid, clicked.getWorld().getName(), clicked.getX(), clicked.getY(), clicked.getZ()));
             p.sendMessage(ChatColor.GREEN + "[Pipes] Receiver valgt. Klik nu en eller flere Senders ([MC1282]).");
             return;
         }
@@ -109,12 +118,12 @@ public class PipeLinkBindListener implements Listener {
                 p.sendMessage(ChatColor.RED + "[Pipes] Du mangler permission til PipeLink-senders (craftbook.ic.mc1282).");
                 return;
             }
-            UUID rid = lastReceiver.get(pid);
-            if (rid == null) {
+            SelectedReceiver sel = lastReceiver.get(pid);
+            if (sel == null) {
                 p.sendMessage(ChatColor.RED + "[Pipes] Klik først et Receiver-skilt ([MC1281]) med Blaze Rod.");
                 return;
             }
-            doBind(p, clicked, rid);
+            doBind(p, clicked, sel);
             return;
         }
 
@@ -129,7 +138,8 @@ public class PipeLinkBindListener implements Listener {
         return p.hasPermission("craftbook.ic." + icId) || p.hasPermission("craftbook.ic.safe." + icId);
     }
 
-    private void doBind(Player p, Sign senderSign, UUID rid) {
+    private void doBind(Player p, Sign senderSign, SelectedReceiver sel) {
+        UUID rid = sel.rid();
         if (!PipeLinkProtection.isWorldAllowed(senderSign.getWorld())) {
             p.sendMessage(ChatColor.RED + "[Pipes] PipeLink er slået fra i denne verden.");
             return;
@@ -166,7 +176,8 @@ public class PipeLinkBindListener implements Listener {
                     + recv.getWorld().getName() + " " + recv.getX() + " " + recv.getY() + " " + recv.getZ(), recv);
             drawLinkParticles(p, center(senderSign.getBlock()), center(recv));
         } else {
-            p.sendMessage(ChatColor.YELLOW + "[Pipes] Sender bundet, men receiveren kan ikke findes i verden (forældet?).");
+            p.sendMessage(ChatColor.YELLOW + "[Pipes] Sender bundet til receiveren du valgte @ " + sel.world() + " " + sel.x() + " " + sel.y() + " " + sel.z()
+                    + " - den er ikke indlæst lige nu. Linket vågner når dens chunk loader; er skiltet fjernet, så vælg en ny receiver og bind om.");
         }
     }
 
