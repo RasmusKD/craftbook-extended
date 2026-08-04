@@ -187,10 +187,13 @@ public final class PipeNetworks implements Listener {
                     Math.max(1, Math.min(64, net.size)));
             ItemMeta meta = icon.getItemMeta();
             meta.setDisplayName((net.blocked ? ChatColor.RED : ChatColor.AQUA)
-                    + "Netværk @ " + w.getName() + " " + x + " " + y + " " + z
-                    + ChatColor.GRAY + " (mindst " + net.size + " blokke)");
+                    + w.getName() + " " + x + " " + y + " " + z);
             List<String> lore = new ArrayList<>();
             lore.add(ChatColor.GRAY + "Størrelse: " + ChatColor.WHITE + "mindst " + net.size + " blokke");
+            String claimOwner = com.sk89q.craftbook.mechanics.ic.gates.world.miscellaneous.PipeLinkProtection
+                    .claimOwnerAt(new Location(w, x, y, z));
+            if (claimOwner != null)
+                lore.add(ChatColor.GRAY + "Claim-ejer: " + ChatColor.WHITE + claimOwner);
             lore.add(ChatColor.GRAY + "Items flyttet: " + ChatColor.WHITE + net.moved
                     + ChatColor.DARK_GRAY + " (siden opstart)");
             lore.add(ChatColor.GRAY + "Sidste puls: " + ChatColor.WHITE + ago(now - net.lastActive));

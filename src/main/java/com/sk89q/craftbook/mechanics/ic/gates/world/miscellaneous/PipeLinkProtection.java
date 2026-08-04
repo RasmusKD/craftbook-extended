@@ -223,6 +223,20 @@ public final class PipeLinkProtection {
         return null;
     }
 
+    /** Owner name of the claim at this location, or null when unclaimed or GP is absent. */
+    public static String claimOwnerAt(org.bukkit.Location location) {
+        Plugin gp = Bukkit.getPluginManager().getPlugin("GriefPrevention");
+        if (gp == null || !gp.isEnabled())
+            return null;
+        return claimOwnerAtGp(location);
+    }
+
+    // Own method so GriefPrevention classes are never loaded when the plugin is absent.
+    private static String claimOwnerAtGp(org.bukkit.Location location) {
+        Claim claim = GriefPrevention.instance.dataStore.getClaimAt(location, false, null);
+        return claim == null ? null : claim.getOwnerName();
+    }
+
     /** The GP trust command matching the configured level, for player-facing messages. */
     public static String requiredTrustName() {
         return switch (level) {
