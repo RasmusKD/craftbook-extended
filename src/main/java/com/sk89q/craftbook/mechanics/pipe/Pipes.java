@@ -266,6 +266,7 @@ public class Pipes extends AbstractCraftBookMechanic {
         wt.fullBackoff.remove(key);
         wt.smokeAt.remove(key);
         wt.blockedPistons.remove(key);
+        wt.chunkRoutes.remove(key);
     }
 
     private void invalidateFilterCacheAround(Block center) {
@@ -404,6 +405,8 @@ public class Pipes extends AbstractCraftBookMechanic {
         final Long2LongOpenHashMap smokeAt = new Long2LongOpenHashMap();
         /** Pistons whose last completed pull was a total failure; kept smoking by the task. */
         final LongOpenHashSet blockedPistons = new LongOpenHashSet();
+        /** Chunk route per source piston, from its last traversal, for async prefetch. */
+        final Long2ObjectOpenHashMap<long[]> chunkRoutes = new Long2ObjectOpenHashMap<>();
         long clearedAt = System.currentTimeMillis();
 
         WorldTypes() {
@@ -876,6 +879,59 @@ public class Pipes extends AbstractCraftBookMechanic {
                 5, 0.15, 0.1, 0.15, 0.01);
     }
 
+    /** Source pistons currently waiting for an async route prefetch; pulses meanwhile are dropped. */
+    private final LongOpenHashSet prefetching = new LongOpenHashSet();
+
+    private void rememberChunkRoute(Block piston, LongOpenHashSet visited) {
+        if (!pipeRoutePrefetch || visited.isEmpty())
+            return;
+        LongOpenHashSet chunks = new LongOpenHashSet();
+        it.unimi.dsi.fastutil.longs.LongIterator it = visited.iterator();
+        while (it.hasNext()) {
+            long key = it.nextLong();
+            chunks.add(((long) (unpackX(key) >> 4) << 32) | ((unpackZ(key) >> 4) & 0xFFFFFFFFL));
+        }
+        caches(piston.getWorld()).chunkRoutes.put(posKey(piston), chunks.toLongArray());
+    }
+
+    /**
+     * The dominant cost of a pulse across unloaded terrain is not the traversal (a few
+     * ms for ten thousand blocks) but the SERIAL chunk loads on the main thread: about
+     * 3ms each, so a 600-chunk route freezes the server for nearly two seconds. The
+     * route from the previous traversal is known, so those loads can run in parallel
+     * off-thread instead: the pulse is deferred a few ticks while Paper's async chunk
+     * loading warms the route, then runs against loaded chunks. Only the redstone path
+     * defers - magnet and link requests carry live item lists their callers inspect
+     * synchronously. First-ever pulse on a route is synchronous (route unknown).
+     */
+    private boolean prefetchThenPulse(Block piston) {
+        if (!pipeRoutePrefetch)
+            return false;
+        World world = piston.getWorld();
+        long entry = posKey(piston);
+        long[] route = caches(world).chunkRoutes.get(entry);
+        if (route == null)
+            return false;
+        java.util.List<java.util.concurrent.CompletableFuture<org.bukkit.Chunk>> pending = new ArrayList<>();
+        for (long c : route) {
+            int cx = (int) (c >> 32), cz = (int) c;
+            if (!world.isChunkLoaded(cx, cz))
+                pending.add(world.getChunkAtAsync(cx, cz));
+        }
+        if (pending.isEmpty())
+            return false;
+        if (!prefetching.add(entry))
+            return true; // already warming this route; drop the pulse like a backoff
+        java.util.concurrent.CompletableFuture
+                .allOf(pending.toArray(new java.util.concurrent.CompletableFuture[0]))
+                .whenComplete((v, err) -> Bukkit.getScheduler().runTask(CraftBookPlugin.inst(), () -> {
+                    prefetching.remove(entry);
+                    if (piston.getType() == Material.STICKY_PISTON)
+                        startPipe(piston, new ArrayList<>(), false);
+                }));
+        return true;
+    }
+
     private void startPipe(Block block, List<ItemStack> items, boolean request) {
         startPipe(block, items, request, null);
     }
@@ -1116,6 +1172,7 @@ public class Pipes extends AbstractCraftBookMechanic {
             // throughput are recorded as a side effect. Feeds the /pipenetworks menu.
             PipeNetworks.record(block.getWorld(), visitedPipes, posKey(block), movedThisPulse, blockedThisPulse,
                     PipeNetworks.classify(stats));
+            rememberChunkRoute(block, visitedPipes);
         } else if (request && isValidPipeBlock(block.getType())) {
             PulseStats stats = new PulseStats();
             // PipeLink hop: items arriving from a linked sender are injected into the pipe
@@ -1161,6 +1218,8 @@ public class Pipes extends AbstractCraftBookMechanic {
 
             if(!EventUtil.passesFilter(event)) return;
 
+            if (prefetchThenPulse(event.getBlock()))
+                return;
             startPipe(event.getBlock(), new ArrayList<>(), false);
         }
     }
@@ -1193,6 +1252,7 @@ public class Pipes extends AbstractCraftBookMechanic {
     private boolean pipeRoundRobinPull;
     private int pipeFullCooldownMillis;
     private boolean pipeFullSmoke;
+    private boolean pipeRoutePrefetch;
     private int pipeDropperDropLimit;
     private boolean pipePassThrough;
     private boolean pipeTraversalCache;
@@ -1227,6 +1287,9 @@ public class Pipes extends AbstractCraftBookMechanic {
 
         config.setComment(path + "full-pipe-cooldown", "Seconds a sticky piston waits before pulling again after a pulse where nothing could be delivered anywhere (full network). Stops full pipes wasting full traversals and vomiting items every pulse. 0 disables.");
         pipeFullCooldownMillis = config.getInt(path + "full-pipe-cooldown", 2) * 1000;
+
+        config.setComment(path + "route-prefetch", "When a pulse's route crosses unloaded chunks, load them in parallel off-thread and run the pulse a few ticks later, instead of freezing the main thread on serial chunk loads. Uses the route recorded by the previous traversal; the first pulse on an unknown route is synchronous.");
+        pipeRoutePrefetch = config.getBoolean(path + "route-prefetch", true);
 
         config.setComment(path + "full-pipe-smoke", "Show black smoke above a paused piston while pulses arrive and its network is refusing items. Makes a blocked far end visible from the sending side, which matters for links and cross-dimension receivers.");
         pipeFullSmoke = config.getBoolean(path + "full-pipe-smoke", true);
