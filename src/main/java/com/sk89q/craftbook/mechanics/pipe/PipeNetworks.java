@@ -139,7 +139,8 @@ public final class PipeNetworks implements Listener {
                     Math.max(1, Math.min(64, net.size)));
             ItemMeta meta = icon.getItemMeta();
             meta.setDisplayName((net.blocked ? ChatColor.RED : ChatColor.AQUA)
-                    + "Netværk @ " + w.getName() + " " + x + " " + y + " " + z);
+                    + "Netværk @ " + w.getName() + " " + x + " " + y + " " + z
+                    + ChatColor.GRAY + " (mindst " + net.size + " blokke)");
             List<String> lore = new ArrayList<>();
             lore.add(ChatColor.GRAY + "Størrelse: " + ChatColor.WHITE + "mindst " + net.size + " pipe-blokke"
                     + ChatColor.DARK_GRAY + " (største målte gennemløb - en hurtig"
@@ -177,10 +178,20 @@ public final class PipeNetworks implements Listener {
         if (slot < 0 || slot >= menu.slots.size() || !(e.getWhoClicked() instanceof Player p))
             return;
         Location target = menu.slots.get(slot);
-        p.closeInventory();
-        p.teleport(target);
-        p.sendMessage(ChatColor.AQUA + "[Pipes] Teleporteret til netværket @ "
-                + target.getWorld().getName() + " " + target.getBlockX() + " " + target.getBlockY() + " " + target.getBlockZ());
+        // Never close or teleport inside the click event itself: the client still
+        // believes the inventory is open and desyncs hard, worst on shift-clicks.
+        Bukkit.getScheduler().runTask(com.sk89q.craftbook.bukkit.CraftBookPlugin.inst(), () -> {
+            p.closeInventory();
+            p.teleport(target);
+            p.sendMessage(ChatColor.AQUA + "[Pipes] Teleporteret til netværket @ "
+                    + target.getWorld().getName() + " " + target.getBlockX() + " " + target.getBlockY() + " " + target.getBlockZ());
+        });
+    }
+
+    @EventHandler
+    public void onMenuDrag(org.bukkit.event.inventory.InventoryDragEvent e) {
+        if (e.getInventory().getHolder() instanceof Menu)
+            e.setCancelled(true);
     }
 
     /* ----------------------------------- command ----------------------------------- */
