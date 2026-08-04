@@ -128,6 +128,9 @@ public final class PipeNetworks implements Listener {
     private static final class Menu implements InventoryHolder {
         final List<Location> slots = new ArrayList<>();
         Inventory inventory;
+        int page;
+        boolean hasPrev;
+        boolean hasNext;
 
         @Override
         public Inventory getInventory() {
@@ -135,7 +138,13 @@ public final class PipeNetworks implements Listener {
         }
     }
 
+    private static final int PAGE_SIZE = 45; // top five rows; bottom row is navigation
+
     public void open(Player p) {
+        open(p, 0);
+    }
+
+    public void open(Player p, int page) {
         long now = System.currentTimeMillis();
         record Row(UUID world, long netKey, Net net) {
         }
@@ -148,13 +157,25 @@ public final class PipeNetworks implements Listener {
         }
         rows.sort(Comparator.comparingLong((Row r) -> r.net().lastActive).reversed());
 
-        Menu menu = new Menu();
-        int size = Math.min(54, ((Math.max(1, rows.size()) + 8) / 9) * 9);
-        menu.inventory = Bukkit.createInventory(menu, size,
-                ChatColor.DARK_AQUA + "Pipe-netværk (" + rows.size() + " aktive)");
+        int pages = Math.max(1, (rows.size() + PAGE_SIZE - 1) / PAGE_SIZE);
+        if (page >= pages)
+            page = pages - 1;
+        if (page < 0)
+            page = 0;
+        boolean paginate = rows.size() > PAGE_SIZE;
+        List<Row> shown = rows.subList(page * PAGE_SIZE, Math.min(rows.size(), (page + 1) * PAGE_SIZE));
 
-        for (Row row : rows) {
-            if (menu.slots.size() >= size)
+        Menu menu = new Menu();
+        menu.page = page;
+        menu.hasPrev = page > 0;
+        menu.hasNext = page < pages - 1;
+        int size = paginate ? 54 : Math.min(54, ((Math.max(1, shown.size()) + 8) / 9) * 9);
+        menu.inventory = Bukkit.createInventory(menu, size,
+                ChatColor.DARK_AQUA + "Pipe-netværk (" + rows.size() + " aktive"
+                + (paginate ? ", side " + (page + 1) + "/" + pages : "") + ")");
+
+        for (Row row : shown) {
+            if (menu.slots.size() >= PAGE_SIZE)
                 break;
             Net net = row.net();
             World w = Bukkit.getWorld(row.world());
@@ -184,7 +205,23 @@ public final class PipeNetworks implements Listener {
             menu.inventory.addItem(icon);
         }
 
+        if (paginate) {
+            if (menu.hasPrev)
+                menu.inventory.setItem(45, navItem(Material.ARROW, ChatColor.YELLOW + "Forrige side"));
+            menu.inventory.setItem(49, navItem(Material.PAPER, ChatColor.GRAY + "Side " + (page + 1) + " af " + pages));
+            if (menu.hasNext)
+                menu.inventory.setItem(53, navItem(Material.ARROW, ChatColor.YELLOW + "Næste side"));
+        }
+
         p.openInventory(menu.inventory);
+    }
+
+    private static ItemStack navItem(Material mat, String name) {
+        ItemStack item = new ItemStack(mat);
+        ItemMeta meta = item.getItemMeta();
+        meta.setDisplayName(name);
+        item.setItemMeta(meta);
+        return item;
     }
 
     private static String ago(long millis) {
@@ -200,7 +237,17 @@ public final class PipeNetworks implements Listener {
             return;
         e.setCancelled(true);
         int slot = e.getRawSlot();
-        if (slot < 0 || slot >= menu.slots.size() || !(e.getWhoClicked() instanceof Player p))
+        if (!(e.getWhoClicked() instanceof Player p))
+            return;
+        if (slot == 45 && menu.hasPrev) {
+            Bukkit.getScheduler().runTask(com.sk89q.craftbook.bukkit.CraftBookPlugin.inst(), () -> open(p, menu.page - 1));
+            return;
+        }
+        if (slot == 53 && menu.hasNext) {
+            Bukkit.getScheduler().runTask(com.sk89q.craftbook.bukkit.CraftBookPlugin.inst(), () -> open(p, menu.page + 1));
+            return;
+        }
+        if (slot < 0 || slot >= menu.slots.size())
             return;
         Location target = menu.slots.get(slot);
         // Never close or teleport inside the click event itself: the client still
