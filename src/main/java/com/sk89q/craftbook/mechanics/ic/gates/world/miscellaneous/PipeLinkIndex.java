@@ -102,6 +102,7 @@ public class PipeLinkIndex implements Listener {
         }
         receivers.remove(rid);
         PipeLinkRouter.get().forgetReceiver(rid);
+        PipeLinkBindListener.forgetSelectionsOf(rid);
     }
 
     /**
@@ -113,6 +114,9 @@ public class PipeLinkIndex implements Listener {
     public void forgetReceiverEntry(UUID rid) {
         receivers.remove(rid);
         PipeLinkRouter.get().forgetReceiver(rid);
+        // The heal fires because the sign is gone or replaced - a known-destroyed
+        // receiver must also leave every player's blaze rod selection.
+        PipeLinkBindListener.forgetSelectionsOf(rid);
     }
 
     public void bindSender(UUID world, int x, int y, int z, UUID rid) {

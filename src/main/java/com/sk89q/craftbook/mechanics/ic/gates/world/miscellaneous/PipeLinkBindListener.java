@@ -48,7 +48,17 @@ public class PipeLinkBindListener implements Listener {
     private record SelectedReceiver(UUID rid, String world, int x, int y, int z) {
     }
 
-    private final Map<UUID, SelectedReceiver> lastReceiver = new ConcurrentHashMap<>();
+    private static final Map<UUID, SelectedReceiver> lastReceiver = new ConcurrentHashMap<>();
+
+    /**
+     * Purges a receiver from every player's remembered selection. Called the moment a
+     * receiver is KNOWN destroyed (sign broken, or a stale entry healed away because the
+     * sign was replaced) - a blaze rod must not bind fresh senders to a ghost. A
+     * receiver whose chunk merely unloaded is NOT purged; that selection still works.
+     */
+    static void forgetSelectionsOf(UUID rid) {
+        lastReceiver.values().removeIf(sel -> sel.rid().equals(rid));
+    }
 
     // Runs first and does not respect prior cancellation: other plugins (and air-click
     // events, which Bukkit fires pre-cancelled) would otherwise silently eat the click.
