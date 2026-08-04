@@ -37,6 +37,18 @@ public class PipeLinkRouter implements Listener {
         BlockFace.EAST, BlockFace.WEST, BlockFace.SOUTH, BlockFace.NORTH, BlockFace.UP, BlockFace.DOWN
     };
 
+    /**
+     * Whether a delivery may load the receiver's chunk (one chunk, at the destination).
+     * Off means links lie dormant while the receiver is unloaded - the old behaviour,
+     * for servers that want strict chunk-neutrality at the cost of needing the far end
+     * loaded before items flow.
+     */
+    private static volatile boolean loadReceiverChunk = true;
+
+    public static void setLoadReceiverChunk(boolean load) {
+        loadReceiverChunk = load;
+    }
+
     private static final int MAX_CHAIN_DEPTH = 16;
     private static int chainDepth = 0;
 
@@ -198,6 +210,14 @@ public class PipeLinkRouter implements Listener {
         }
 
         PipeLinkIndex index = PipeLinkIndex.get();
+        if (!loadReceiverChunk) {
+            PipeLinkIndex.ReceiverRef ref = index.getReceiverRef(receiverId);
+            if (ref != null) {
+                org.bukkit.World w = Bukkit.getWorld(ref.world());
+                if (w == null || !w.isChunkLoaded(ref.x() >> 4, ref.z() >> 4))
+                    return null; // dormant while the receiver is unloaded
+            }
+        }
         Block recvSign = index.getReceiverSignBlock(receiverId);
         if (recvSign == null)
             return null;

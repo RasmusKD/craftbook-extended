@@ -178,11 +178,6 @@ public class PipeLinkIndex implements Listener {
     }
 
     @EventHandler
-    public void onChunkUnload(ChunkUnloadEvent event) {
-        evictChunk(event.getChunk());
-    }
-
-    @EventHandler
     public void onWorldUnload(WorldUnloadEvent event) {
         UUID world = event.getWorld().getUID();
         sendersByWorld.remove(world);
@@ -237,35 +232,13 @@ public class PipeLinkIndex implements Listener {
         }
     }
 
-    private void evictChunk(Chunk chunk) {
-        UUID world = chunk.getWorld().getUID();
-        int cx = chunk.getX();
-        int cz = chunk.getZ();
-
-        Long2ObjectOpenHashMap<UUID> worldSenders = sendersByWorld.get(world);
-        if (worldSenders != null && !worldSenders.isEmpty()) {
-            worldSenders.long2ObjectEntrySet().removeIf(e -> {
-                long key = e.getLongKey();
-                if (unpackX(key) >> 4 != cx || unpackZ(key) >> 4 != cz)
-                    return false;
-                Set<SenderRef> set = recvToSenders.get(e.getValue());
-                if (set != null)
-                    set.removeIf(s -> posKey(s.x(), s.y(), s.z()) == key && s.world().equals(world));
-                return true;
-            });
-        }
-
-        receivers.entrySet().removeIf(e -> {
-            ReceiverRef ref = e.getValue();
-            if (!ref.world().equals(world) || ref.x() >> 4 != cx || ref.z() >> 4 != cz)
-                return false;
-            // Router caches repopulate on next use; dropping them here keeps them
-            // bounded by loaded receivers instead of lifetime receiver churn.
-            PipeLinkRouter.get().forgetReceiver(e.getKey());
-            return true;
-        });
-    }
-
+    /* Chunk unload no longer evicts anything. Entries are packed longs and UUIDs, so
+     * memory is bounded by real signs; blocks cannot change in unloaded chunks, so the
+     * entries cannot go stale there; and keeping them is what lets a delivery reach a
+     * receiver whose chunk is unloaded by loading that ONE chunk - classic pipes
+     * sync-load their whole route, so a link doing less than that was the worse tool
+     * for exactly the job it was built for. Chunk load still rescans (idempotent) and
+     * heals; world unload still clears everything for that world. */
     private static int unpackX(long key) {
         return (int) (key >> 38);
     }
