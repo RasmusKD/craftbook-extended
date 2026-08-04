@@ -49,6 +49,22 @@ public class PipeLinkRouter implements Listener {
         loadReceiverChunk = load;
     }
 
+    /**
+     * Minimum time between WAKING an unloaded receiver chunk, per receiver. Deliveries
+     * to an already-loaded chunk are unthrottled; this only limits how often a link may
+     * load a chunk that nobody else keeps loaded. Without it, a clocked sender is a
+     * free chunk loader for the far end - farms and machines in that chunk would run
+     * around the clock. With it, the chunk is awake a few seconds per window: items
+     * still flow in batches, farms do not.
+     */
+    private static volatile long unloadedWakeCooldownMillis = 60_000L;
+
+    public static void setUnloadedWakeCooldownSeconds(int seconds) {
+        unloadedWakeCooldownMillis = Math.max(0, seconds) * 1000L;
+    }
+
+    private final Map<UUID, Long> lastUnloadedWake = new ConcurrentHashMap<>();
+
     private static final int MAX_CHAIN_DEPTH = 16;
     private static int chainDepth = 0;
 
@@ -85,6 +101,7 @@ public class PipeLinkRouter implements Listener {
     void forgetReceiver(UUID rid) {
         lastGoodCandidate.remove(rid);
         deliveryBackoff.remove(rid);
+        lastUnloadedWake.remove(rid);
     }
 
     /**
@@ -210,12 +227,23 @@ public class PipeLinkRouter implements Listener {
         }
 
         PipeLinkIndex index = PipeLinkIndex.get();
-        if (!loadReceiverChunk) {
-            PipeLinkIndex.ReceiverRef ref = index.getReceiverRef(receiverId);
-            if (ref != null) {
-                org.bukkit.World w = Bukkit.getWorld(ref.world());
-                if (w == null || !w.isChunkLoaded(ref.x() >> 4, ref.z() >> 4))
+        PipeLinkIndex.ReceiverRef ref = index.getReceiverRef(receiverId);
+        if (ref != null) {
+            org.bukkit.World w = Bukkit.getWorld(ref.world());
+            if (w == null)
+                return null;
+            if (!w.isChunkLoaded(ref.x() >> 4, ref.z() >> 4)) {
+                if (!loadReceiverChunk)
                     return null; // dormant while the receiver is unloaded
+                // Waking an unloaded chunk is rationed per receiver, so a clocked
+                // sender cannot function as a chunk loader for the far end.
+                if (unloadedWakeCooldownMillis > 0) {
+                    long now = System.currentTimeMillis();
+                    Long lastWake = lastUnloadedWake.get(receiverId);
+                    if (lastWake != null && now - lastWake < unloadedWakeCooldownMillis)
+                        return null;
+                    lastUnloadedWake.put(receiverId, now);
+                }
             }
         }
         Block recvSign = index.getReceiverSignBlock(receiverId);
