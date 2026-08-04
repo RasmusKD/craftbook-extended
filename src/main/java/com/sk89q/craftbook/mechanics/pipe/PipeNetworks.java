@@ -147,7 +147,7 @@ public final class PipeNetworks implements Listener {
                     + ChatColor.DARK_GRAY + " (siden opstart)");
             lore.add(ChatColor.GRAY + "Sidste puls: " + ChatColor.WHITE + ago(now - net.lastActive));
             lore.add(net.blocked
-                    ? ChatColor.RED + "BLOKERET - ryger (fuldt i den anden ende)"
+                    ? ChatColor.RED + "BLOKERET - intet output tog imod (fuldt eller mangler)"
                     : ChatColor.GREEN + "Kører");
             lore.add(ChatColor.YELLOW + "Klik for at teleportere");
             meta.setLore(lore);
