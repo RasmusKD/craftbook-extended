@@ -18,6 +18,7 @@ import java.util.UUID;
 public final class PipeLink {
 
     public static final NamespacedKey SEND_BOUND = new NamespacedKey("craftbook", "pipe_send_bound");
+    public static final NamespacedKey SEND_RECV_POS = new NamespacedKey("craftbook", "pipe_send_recv_pos");
     public static final NamespacedKey RECV_UUID = new NamespacedKey("craftbook", "pipe_recv_uuid");
     public static final NamespacedKey RECV_POS = new NamespacedKey("craftbook", "pipe_recv_pos");
 
@@ -62,9 +63,42 @@ public final class PipeLink {
         senderSign.update(true, false);
     }
 
+    /**
+     * The receiver's position, stored on the SENDER sign at bind time. This is what makes
+     * a link as durable as two adjacent pipe blocks: after a reboot the index only knows
+     * about chunks that have loaded, so without this a sender whose receiver chunk never
+     * loaded again would be dead until someone happened to walk by the far end. With it,
+     * the first pulse resolves the receiver straight from the sender's own sign.
+     */
+    public static void writeBoundReceiverPos(Sign senderSign, UUID world, int x, int y, int z) {
+        PersistentDataContainer pdc = senderSign.getPersistentDataContainer();
+        pdc.set(SEND_RECV_POS, PersistentDataType.STRING, world + ":" + x + "," + y + "," + z);
+        senderSign.update(true, false);
+    }
+
+    public static boolean hasBoundReceiverPos(Sign senderSign) {
+        return senderSign.getPersistentDataContainer().has(SEND_RECV_POS, PersistentDataType.STRING);
+    }
+
+    /** Returns {worldUUID, x, y, z} as Object[]{UUID, Integer, Integer, Integer}, or null. */
+    public static Object[] readBoundReceiverPos(Sign senderSign) {
+        String raw = senderSign.getPersistentDataContainer().get(SEND_RECV_POS, PersistentDataType.STRING);
+        if (raw == null)
+            return null;
+        try {
+            int colon = raw.indexOf(':');
+            UUID world = UUID.fromString(raw.substring(0, colon));
+            String[] parts = raw.substring(colon + 1).split(",");
+            return new Object[] { world, Integer.parseInt(parts[0]), Integer.parseInt(parts[1]), Integer.parseInt(parts[2]) };
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
     public static void clearBoundReceiverUUID(Sign senderSign) {
         PersistentDataContainer pdc = senderSign.getPersistentDataContainer();
         pdc.remove(SEND_BOUND);
+        pdc.remove(SEND_RECV_POS);
         senderSign.update(true, false);
     }
 

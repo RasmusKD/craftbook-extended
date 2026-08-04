@@ -254,8 +254,14 @@ public class PipeLinkRouter implements Listener {
             }
         }
         Block recvSign = index.getReceiverSignBlock(receiverId);
-        if (recvSign == null)
-            return null;
+        if (recvSign == null) {
+            // Boot gap: the index only knows chunks that have loaded this session. The
+            // sender's own PDC carries the receiver's position, so resolve from there -
+            // this is what makes a link as durable as two adjacent pipe blocks.
+            recvSign = resolveFromSenderPos(index, senderSignBlock, receiverId);
+            if (recvSign == null)
+                return null;
+        }
         if (!SignUtil.isSign(recvSign)
                 || !(io.papermc.lib.PaperLib.getBlockState(recvSign, false).getState() instanceof org.bukkit.block.Sign recvState)
                 || !receiverId.equals(PipeLink.readReceiverUUID(recvState))) {
@@ -265,6 +271,13 @@ public class PipeLinkRouter implements Listener {
             // form is reserved for a player explicitly breaking the sign.
             index.forgetReceiverEntry(receiverId);
             return null;
+        }
+
+        // Backfill the stored position on bindings made before it existed, so they too
+        // become reboot-proof the first time they deliver.
+        if (io.papermc.lib.PaperLib.getBlockState(senderSignBlock, false).getState() instanceof org.bukkit.block.Sign sSign
+                && !PipeLink.hasBoundReceiverPos(sSign)) {
+            PipeLink.writeBoundReceiverPos(sSign, recvSign.getWorld().getUID(), recvSign.getX(), recvSign.getY(), recvSign.getZ());
         }
 
         if (!PipeLinkProtection.isCrossLinkAllowed(senderSignBlock.getWorld(), recvSign.getWorld())) {
@@ -325,6 +338,37 @@ public class PipeLinkRouter implements Listener {
             chainDepth--;
             activeTeleports.remove(key);
         }
+    }
+
+    /**
+     * Resolves a receiver the index has never seen this session, using the position the
+     * sender sign stored at bind time. Loads that one chunk, verifies the receiver's
+     * identity by PDC, and re-registers it. If the loaded block verifiably is not the
+     * receiver any more, the link is factually dead (the sign is gone), and the sender
+     * is unbound - same semantics as breaking the receiver sign.
+     */
+    private Block resolveFromSenderPos(PipeLinkIndex index, Block senderSignBlock, UUID receiverId) {
+        if (!(io.papermc.lib.PaperLib.getBlockState(senderSignBlock, false).getState() instanceof org.bukkit.block.Sign senderSign))
+            return null;
+        Object[] pos = PipeLink.readBoundReceiverPos(senderSign);
+        if (pos == null)
+            return null; // pre-position binding; heals when the receiver chunk loads
+        org.bukkit.World w = Bukkit.getWorld((UUID) pos[0]);
+        if (w == null)
+            return null;
+        int x = (Integer) pos[1], y = (Integer) pos[2], z = (Integer) pos[3];
+        if (!loadReceiverChunk && !w.isChunkLoaded(x >> 4, z >> 4))
+            return null;
+        Block candidate = w.getBlockAt(x, y, z);
+        if (io.papermc.lib.PaperLib.getBlockState(candidate, false).getState() instanceof org.bukkit.block.Sign recvState
+                && receiverId.equals(PipeLink.readReceiverUUID(recvState))) {
+            index.registerReceiver(receiverId, w.getUID(), x, y, z);
+            return candidate;
+        }
+        // Verified gone: the position loaded and holds no receiver with this identity.
+        index.unbindSenderAt(senderSignBlock.getWorld().getUID(), senderSignBlock.getX(), senderSignBlock.getY(), senderSignBlock.getZ());
+        PipeLink.clearBoundReceiverUUID(senderSign);
+        return null;
     }
 
     /** Fires one injection probe. Returns the leftovers if anything was accepted, else null. */

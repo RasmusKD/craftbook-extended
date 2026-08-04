@@ -45,7 +45,7 @@ public class PipeLinkBindListener implements Listener {
      * the position, "receiveren kan ikke findes" reads like nonsense on a freshly
      * placed sender: the player has no idea which old selection it refers to.
      */
-    private record SelectedReceiver(UUID rid, String world, int x, int y, int z) {
+    private record SelectedReceiver(UUID rid, UUID worldId, String world, int x, int y, int z) {
     }
 
     private static final Map<UUID, SelectedReceiver> lastReceiver = new ConcurrentHashMap<>();
@@ -118,7 +118,7 @@ public class PipeLinkBindListener implements Listener {
                 PipeLink.writeReceiverUUID(clicked, rid);
             }
             PipeLinkIndex.get().registerReceiver(rid, clicked.getWorld().getUID(), clicked.getX(), clicked.getY(), clicked.getZ());
-            lastReceiver.put(pid, new SelectedReceiver(rid, clicked.getWorld().getName(), clicked.getX(), clicked.getY(), clicked.getZ()));
+            lastReceiver.put(pid, new SelectedReceiver(rid, clicked.getWorld().getUID(), clicked.getWorld().getName(), clicked.getX(), clicked.getY(), clicked.getZ()));
             p.sendMessage(ChatColor.GREEN + "[Pipes] Receiver valgt. Klik nu en eller flere Senders ([MC1282]).");
             return;
         }
@@ -177,6 +177,12 @@ public class PipeLinkBindListener implements Listener {
 
         UUID previous = PipeLink.readBoundReceiverUUID(senderSign);
         PipeLink.writeBoundReceiverUUID(senderSign, rid);
+        // The sender itself remembers where its receiver stands, so the link survives
+        // reboots without depending on the far chunk ever having been loaded.
+        if (recvBlock != null)
+            PipeLink.writeBoundReceiverPos(senderSign, recvBlock.getWorld().getUID(), recvBlock.getX(), recvBlock.getY(), recvBlock.getZ());
+        else
+            PipeLink.writeBoundReceiverPos(senderSign, sel.worldId(), sel.x(), sel.y(), sel.z());
         PipeLinkIndex.get().bindSender(senderSign.getWorld().getUID(), senderSign.getX(), senderSign.getY(), senderSign.getZ(), rid);
 
         String verb = previous == null ? "bundet" : previous.equals(rid) ? "allerede bundet" : "ombundet";
