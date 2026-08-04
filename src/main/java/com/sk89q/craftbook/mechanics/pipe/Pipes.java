@@ -1148,8 +1148,8 @@ public class Pipes extends AbstractCraftBookMechanic {
         config.setComment(path + "link-load-receiver-chunk", "Allow a link delivery to load the receiver's chunk (one chunk, at the destination) so items flow even when nobody is near the far end - same class of loading classic pipes already do for their whole route. Disable for strict chunk-neutrality: links then lie dormant until the receiver's chunk is loaded.");
         com.sk89q.craftbook.mechanics.ic.gates.world.miscellaneous.PipeLinkRouter.setLoadReceiverChunk(config.getBoolean(path + "link-load-receiver-chunk", true));
 
-        config.setComment(path + "link-unloaded-wake-cooldown", "Minimum seconds between a link WAKING an unloaded receiver chunk, per receiver. Deliveries to already-loaded chunks are unaffected. Stops clocked senders doubling as chunk loaders for the far end: items arrive in batches per window instead. 0 wakes on every delivery.");
-        com.sk89q.craftbook.mechanics.ic.gates.world.miscellaneous.PipeLinkRouter.setUnloadedWakeCooldownSeconds(config.getInt(path + "link-unloaded-wake-cooldown", 60));
+        config.setComment(path + "link-unloaded-wake-cooldown", "Minimum seconds between a link waking an unloaded receiver chunk, per chunk. 0 (default) wakes on every delivery - the same behaviour classic pipes have, which sync-load their whole route every pulse. Raise it to ration wakes if remote chunk-keeping via links becomes a problem on your server.");
+        com.sk89q.craftbook.mechanics.ic.gates.world.miscellaneous.PipeLinkRouter.setUnloadedWakeCooldownSeconds(config.getInt(path + "link-unloaded-wake-cooldown", 0));
 
         config.setComment(path + "link-cross-dimension", "Allow PipeLink senders and receivers to be linked across dimensions (overworld/nether/end). When disabled, new cross-dimension bindings are refused and existing ones lie dormant until re-enabled.");
         com.sk89q.craftbook.mechanics.ic.gates.world.miscellaneous.PipeLinkProtection.setAllowCrossDimension(config.getBoolean(path + "link-cross-dimension", true));
