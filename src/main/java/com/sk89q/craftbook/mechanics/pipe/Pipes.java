@@ -810,6 +810,8 @@ public class Pipes extends AbstractCraftBookMechanic {
         if (block.getType() == Material.STICKY_PISTON) {
 
             List<ItemStack> leftovers = new ArrayList<>();
+            int movedThisPulse = 0;
+            boolean blockedThisPulse = false;
 
             Piston p = (Piston) block.getBlockData();
             Block fac = block.getRelative(p.getFacing());
@@ -906,7 +908,9 @@ public class Pipes extends AbstractCraftBookMechanic {
                     for (ItemStack left : items)
                         if (left != null)
                             undelivered += left.getAmount();
+                    movedThisPulse = pulledAmount - undelivered;
                     if (pipeFullCooldownMillis > 0 && pulledAmount > 0 && undelivered >= pulledAmount) {
+                        blockedThisPulse = true;
                         WorldTypes wt = caches(block.getWorld());
                         long pistonKey = posKey(block);
                         wt.fullBackoff.put(pistonKey, System.currentTimeMillis() + pipeFullCooldownMillis);
@@ -929,6 +933,7 @@ public class Pipes extends AbstractCraftBookMechanic {
                     }
                 } else {
                     // Everything delivered (or nothing to pull): the piston is not blocked.
+                    movedThisPulse = pulledAmount;
                     caches(block.getWorld()).blockedPistons.remove(posKey(block));
                 }
             } else if (facType == Material.FURNACE || facType == Material.BLAST_FURNACE || facType == Material.SMOKER) {
@@ -1019,6 +1024,10 @@ public class Pipes extends AbstractCraftBookMechanic {
                     block.getWorld().dropItemNaturally(block.getLocation().add(0.5, 0.5, 0.5), item);
                 }
             }
+
+            // Free observability: the traversal already visited every block, so size and
+            // throughput are recorded as a side effect. Feeds the /pipenetworks menu.
+            PipeNetworks.record(block.getWorld(), visitedPipes, posKey(block), movedThisPulse, blockedThisPulse);
         } else if (request && isValidPipeBlock(block.getType())) {
             // PipeLink hop: items arriving from a linked sender are injected into the pipe
             // network at this block, which need not be a sticky piston.

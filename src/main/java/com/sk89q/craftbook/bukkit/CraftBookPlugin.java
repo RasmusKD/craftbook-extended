@@ -455,6 +455,8 @@ public class CraftBookPlugin extends JavaPlugin {
 
         // PipeLink (MC1281/MC1282) support. Routing is driven by an in-memory index of
         // link signs, so these are effectively free until someone builds the ICs.
+        getServer().getPluginManager().registerEvents(com.sk89q.craftbook.mechanics.pipe.PipeNetworks.get(), this);
+        getServer().getCommandMap().register("craftbook", new com.sk89q.craftbook.mechanics.pipe.PipeNetworks.NetworksCommand());
         getServer().getPluginManager().registerEvents(PipeLinkIndex.get(), this);
         getServer().getPluginManager().registerEvents(PipeLinkRouter.get(), this);
         getServer().getPluginManager().registerEvents(new PipeLinkBindListener(), this);
