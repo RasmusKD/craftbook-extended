@@ -37,7 +37,8 @@ public class ContainerFeeder extends AbstractSelfTriggeredIC {
 
     @Override
     public void load() {
-        direction = parseDirection(getLine(2));
+        BlockFace parsed = parseDirection(getLine(2));
+        direction = parsed == null ? BlockFace.DOWN : parsed; // hopper's default
         amount = 1;
         try {
             amount = Math.max(1, Math.min(64, Integer.parseInt(getLine(3).trim())));
@@ -45,14 +46,16 @@ public class ContainerFeeder extends AbstractSelfTriggeredIC {
         }
     }
 
+    /** Null when the line is not a recognised direction. */
     private static BlockFace parseDirection(String line) {
         return switch (line.trim().toLowerCase(Locale.ROOT)) {
             case "up", "u", "op" -> BlockFace.UP;
+            case "down", "d", "ned" -> BlockFace.DOWN;
             case "north", "n", "nord" -> BlockFace.NORTH;
             case "south", "s", "syd" -> BlockFace.SOUTH;
             case "east", "e", "oest", "øst" -> BlockFace.EAST;
             case "west", "w", "v", "vest" -> BlockFace.WEST;
-            default -> BlockFace.DOWN; // hopper's default
+            default -> null;
         };
     }
 
@@ -158,6 +161,30 @@ public class ContainerFeeder extends AbstractSelfTriggeredIC {
         @Override
         public String[] getLineHelp() {
             return new String[] {"direction: up/down/north/south/east/west", "items per tick (1-64)"};
+        }
+
+        // Write the effective defaults onto empty lines so the sign documents itself,
+        // and reject typos instead of silently feeding downwards.
+        @Override
+        public void verify(ChangedSign sign) throws com.sk89q.craftbook.mechanics.ic.ICVerificationException {
+            String line3 = sign.getLine(2).trim();
+            if (line3.isEmpty())
+                sign.setLine(2, "down");
+            else if (parseDirection(line3) == null)
+                throw new com.sk89q.craftbook.mechanics.ic.ICVerificationException(
+                        "Line 3 must be a direction: up, down, north, south, east or west.");
+            String line4 = sign.getLine(3).trim();
+            if (line4.isEmpty()) {
+                sign.setLine(3, "1");
+            } else {
+                try {
+                    int perTick = Integer.parseInt(line4);
+                    if (perTick < 1 || perTick > 64)
+                        throw new com.sk89q.craftbook.mechanics.ic.ICVerificationException("Line 4 must be 1-64 items per tick.");
+                } catch (NumberFormatException e) {
+                    throw new com.sk89q.craftbook.mechanics.ic.ICVerificationException("Line 4 must be a number: items per tick (1-64).");
+                }
+            }
         }
     }
 }
