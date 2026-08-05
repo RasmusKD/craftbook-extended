@@ -129,6 +129,7 @@ public class SelfTriggeringManager implements Listener {
         }
 
         java.util.Map<World, java.util.Map<Long, Boolean>> loadedCache = new java.util.HashMap<>();
+        int adjSkipped = 0;
         for (Location location : registeredLocations) {
             if(!isLoadedCached(location.getWorld(), location.getBlockX() >> 4, location.getBlockZ() >> 4, loadedCache)) {
                 unregisterSelfTrigger(location, UnregisterReason.UNLOAD);
@@ -138,6 +139,7 @@ public class SelfTriggeringManager implements Listener {
             // If some of the adjacent chunks aren't loaded, don't self trigger the IC yet; effectively "pause" it.
             // This prevents some occasionally serious chunk thrashing.
             if (!areAdjacentChunksLoaded(location, loadedCache)) {
+                adjSkipped++;
                 continue;
             }
 
@@ -153,7 +155,13 @@ public class SelfTriggeringManager implements Listener {
                 unregisterSelfTrigger(location, UnregisterReason.ERROR);
             }
         }
+        if (++debugPassCounter % 100 == 0 && CraftBookPlugin.isDebugFlagEnabled("st")) {
+            Bukkit.getLogger().info("[ST/DBG] pass " + debugPassCounter + ": " + registeredLocations.length
+                    + " locations, " + adjSkipped + " adjacency-skipped");
+        }
     }
+
+    private long debugPassCounter;
 
     @EventHandler(priority = EventPriority.HIGH)
     public void onChunkLoad(final ChunkLoadEvent event) {

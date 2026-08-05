@@ -38,6 +38,11 @@ public class ContainerFeeder extends AbstractSelfTriggeredIC {
     @Override
     public void load() {
         direction = resolveDirection(getLine(2));
+        if (com.sk89q.craftbook.bukkit.CraftBookPlugin.isDebugFlagEnabled("st.feeder")) {
+            Block b = getBackBlock();
+            com.sk89q.craftbook.bukkit.CraftBookPlugin.logger().info("[Feeder/DBG] load @" + b.getX() + "," + b.getY() + "," + b.getZ()
+                    + " dir=" + direction + " line2='" + getLine(2) + "'");
+        }
         // A whole stack per think is the efficient default: one addItem call costs
         // nearly the same regardless of size, so items-per-work is maximised. Players
         // write a smaller number on line 4 when they want a slower feed.
@@ -128,14 +133,30 @@ public class ContainerFeeder extends AbstractSelfTriggeredIC {
      */
     private static final long IDLE_REST_MILLIS = 500L;
     private long restUntil;
+    private long debugIdleLogAt;
+    private long debugMoveLogAt;
 
     public boolean feed() {
         long now = System.currentTimeMillis();
         if (now < restUntil)
             return false;
         boolean moved = doFeed();
-        if (!moved)
+        if (!moved) {
             restUntil = now + IDLE_REST_MILLIS;
+            if (now > debugIdleLogAt && com.sk89q.craftbook.bukkit.CraftBookPlugin.isDebugFlagEnabled("st.feeder")) {
+                debugIdleLogAt = now + 5000L;
+                Block b = getBackBlock();
+                boolean srcInv = InventoryUtil.doesBlockHaveInventory(b);
+                Block t = b.getRelative(direction);
+                int srcItems = 0;
+                if (srcInv) {
+                    for (ItemStack st : ((InventoryHolder) PaperLib.getBlockState(b, false).getState()).getInventory().getContents())
+                        if (st != null) srcItems += st.getAmount();
+                }
+                com.sk89q.craftbook.bukkit.CraftBookPlugin.logger().info("[Feeder/DBG] idle @" + b.getX() + "," + b.getY() + "," + b.getZ()
+                        + " dir=" + direction + " srcItems=" + srcItems + " targetInv=" + InventoryUtil.doesBlockHaveInventory(t));
+            }
+        }
         return moved;
     }
 
@@ -147,8 +168,12 @@ public class ContainerFeeder extends AbstractSelfTriggeredIC {
         if (!InventoryUtil.doesBlockHaveInventory(target))
             return false;
 
-        Inventory src = ((InventoryHolder) PaperLib.getBlockState(source, false).getState()).getInventory();
-        InventoryHolder dst = (InventoryHolder) PaperLib.getBlockState(target, false).getState();
+        io.papermc.lib.features.blockstatesnapshot.BlockStateSnapshotResult srcRes = PaperLib.getBlockState(source, false);
+        io.papermc.lib.features.blockstatesnapshot.BlockStateSnapshotResult dstRes = PaperLib.getBlockState(target, false);
+        Inventory src = ((InventoryHolder) srcRes.getState()).getInventory();
+        InventoryHolder dst = (InventoryHolder) dstRes.getState();
+        boolean dbg = System.currentTimeMillis() > debugMoveLogAt && com.sk89q.craftbook.bukkit.CraftBookPlugin.isDebugFlagEnabled("st.feeder");
+        if (dbg) debugMoveLogAt = System.currentTimeMillis() + 5000L;
 
         for (int slot = 0; slot < src.getSize(); slot++) {
             ItemStack stack = src.getItem(slot);
@@ -166,6 +191,17 @@ public class ContainerFeeder extends AbstractSelfTriggeredIC {
             for (ItemStack left : InventoryUtil.addItemsToInventory(dst, false, attempt))
                 rest += left == null ? 0 : left.getAmount();
             int moved = take - rest;
+            if (dbg) {
+                int srcTotal = 0;
+                for (ItemStack st2 : src.getContents())
+                    if (st2 != null) srcTotal += st2.getAmount();
+                int dstTotal = 0;
+                for (ItemStack st2 : dst.getInventory().getContents())
+                    if (st2 != null) dstTotal += st2.getAmount();
+                com.sk89q.craftbook.bukkit.CraftBookPlugin.logger().info("[Feeder/DBG] move @" + source.getX() + "," + source.getY() + "," + source.getZ()
+                        + " slot=" + slot + " take=" + take + " rest=" + rest + " moved=" + moved
+                        + " srcTotalAfterInsert=" + srcTotal + " dstTotal=" + dstTotal);
+            }
             if (moved <= 0)
                 continue; // no room for this item type; try the next stack
             if (moved >= stack.getAmount())
