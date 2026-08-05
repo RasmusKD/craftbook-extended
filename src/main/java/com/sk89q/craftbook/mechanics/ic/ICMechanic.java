@@ -300,14 +300,39 @@ public class ICMechanic extends AbstractCraftBookMechanic {
 
         if(!EventUtil.passesFilter(event)) return;
 
+        // Fast path: a cached self-triggered IC thinks without re-snapshotting and
+        // re-parsing its sign (getState + component serialization + regex, per IC per
+        // tick - the dominant framework cost with many STs). The full setupIC pass
+        // still runs once a second per IC, and the entry is only honoured while the
+        // IC remains in ICManager's cache, so break/unload invalidation is unchanged.
+        org.bukkit.Location loc = event.getBlock().getLocation();
+        long now = System.currentTimeMillis();
+        Object[] fast = thinkFastCache.get(loc);
+        if (fast != null && now < (Long) fast[1] && ICManager.isCachedIC(loc)) {
+            IC cachedIC = ICManager.getCachedIC(loc);
+            if (cachedIC instanceof SelfTriggeredIC) {
+                event.setHandled(true);
+                ChipState chipState = ((ICFamily) fast[0]).detectSelfTriggered(BukkitAdapter.adapt(loc), cachedIC.getSign());
+                ((SelfTriggeredIC) cachedIC).think(chipState);
+                return;
+            }
+        }
+
         final Object[] icData = setupIC(event.getBlock(), true);
 
         if(icData != null && icData[2] instanceof SelfTriggeredIC) {
             event.setHandled(true);
+            if (thinkFastCache.size() > 4096)
+                thinkFastCache.clear();
+            thinkFastCache.put(loc, new Object[] { icData[1], now + THINK_REVERIFY_MILLIS });
             ChipState chipState = ((ICFamily) icData[1]).detectSelfTriggered(BukkitAdapter.adapt(event.getBlock().getLocation()), ((IC) icData[2]).getSign());
             ((SelfTriggeredIC) icData[2]).think(chipState);
         }
     }
+
+    /** Location -> {ICFamily, reverify-deadline millis} for the think fast path. */
+    private final java.util.Map<org.bukkit.Location, Object[]> thinkFastCache = new java.util.HashMap<>();
+    private static final long THINK_REVERIFY_MILLIS = 1000L;
 
     @EventHandler(priority = EventPriority.HIGH)
     public void onBlockBreak(BlockBreakEvent event) {

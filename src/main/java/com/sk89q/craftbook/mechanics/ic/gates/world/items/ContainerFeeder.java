@@ -73,7 +73,10 @@ public class ContainerFeeder extends AbstractSelfTriggeredIC {
 
     @Override
     public void think(ChipState chip) {
-        chip.setOutput(0, feed());
+        // No setOutput: probing for an output lever costs more than the feed itself,
+        // and a self-running feeder has no meaningful output signal. The redstone-
+        // triggered variant still reports through trigger().
+        feed();
     }
 
     public boolean feed() {
