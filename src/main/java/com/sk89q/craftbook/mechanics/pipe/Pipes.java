@@ -1298,8 +1298,8 @@ public class Pipes extends AbstractCraftBookMechanic {
         config.setComment(path + "full-pipe-cooldown", "Seconds a sticky piston waits before pulling again after a pulse where nothing could be delivered anywhere (full network). Stops full pipes wasting full traversals and vomiting items every pulse. 0 disables.");
         pipeFullCooldownMillis = config.getInt(path + "full-pipe-cooldown", 2) * 1000;
 
-        config.setComment(path + "slow-pulse-throttle", "Seconds a source piston rests after a pulse that took more than 100ms of the main thread (typically a huge pipe crossing unloaded chunks). The pulse still delivers; the rest just stops a clock from freezing the server in rhythm. 0 disables.");
-        pipeSlowPulseThrottleMillis = config.getInt(path + "slow-pulse-throttle", 10) * 1000L;
+        config.setComment(path + "slow-pulse-throttle", "OPT-IN freeze guard, 0 (off) by default: seconds a source piston rests after a pulse that took more than 100ms of the main thread (typically a huge pipe crossing unloaded chunks). The pulse still delivers; the rest just stops a clock from freezing the server in rhythm. Off means pipes always behave exactly like vanilla CraftBook.");
+        pipeSlowPulseThrottleMillis = config.getInt(path + "slow-pulse-throttle", 0) * 1000L;
 
         config.setComment(path + "full-pipe-smoke", "Show black smoke above a paused piston while pulses arrive and its network is refusing items. Makes a blocked far end visible from the sending side, which matters for links and cross-dimension receivers.");
         pipeFullSmoke = config.getBoolean(path + "full-pipe-smoke", true);
