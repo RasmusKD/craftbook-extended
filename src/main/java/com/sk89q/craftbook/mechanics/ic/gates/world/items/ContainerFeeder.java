@@ -108,7 +108,7 @@ public class ContainerFeeder extends AbstractSelfTriggeredIC {
             return false;
 
         Inventory src = ((InventoryHolder) PaperLib.getBlockState(source, false).getState()).getInventory();
-        Inventory dst = ((InventoryHolder) PaperLib.getBlockState(target, false).getState()).getInventory();
+        InventoryHolder dst = (InventoryHolder) PaperLib.getBlockState(target, false).getState();
 
         for (int slot = 0; slot < src.getSize(); slot++) {
             ItemStack stack = src.getItem(slot);
@@ -119,9 +119,12 @@ public class ContainerFeeder extends AbstractSelfTriggeredIC {
             attempt.setAmount(take);
             // Insert first, then deduct only what actually fit: the deposit and the
             // withdrawal can never disagree, so a full target cannot dupe or destroy.
+            // Same routing as pipe deliveries: smeltables and fuel land in the right
+            // furnace slots, brewing stands sort ingredient/fuel/bottles, and shulker
+            // boxes refuse nested shulkers.
             int rest = 0;
-            for (ItemStack left : dst.addItem(attempt).values())
-                rest += left.getAmount();
+            for (ItemStack left : InventoryUtil.addItemsToInventory(dst, false, attempt))
+                rest += left == null ? 0 : left.getAmount();
             int moved = take - rest;
             if (moved <= 0)
                 continue; // no room for this item type; try the next stack
