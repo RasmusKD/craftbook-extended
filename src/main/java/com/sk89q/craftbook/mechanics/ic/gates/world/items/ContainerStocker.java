@@ -70,23 +70,57 @@ public class ContainerStocker extends AbstractSelfTriggeredIC {
 
     public boolean stock() {
 
-        if (InventoryUtil.doesBlockHaveInventory(offset.getBlock())) {
+        if (!InventoryUtil.doesBlockHaveInventory(offset.getBlock()))
+            return false;
 
-            BlockFace back = SignUtil.getBack(CraftBookBukkitUtil.toSign(getSign()).getBlock());
-            Block pipe = getBackBlock().getRelative(back);
+        InventoryHolder target = (InventoryHolder) offset.getBlock().getState();
+        // Only ask for what is known to fit: the extraction removes real items from the
+        // source container, so nothing may be pulled that could end up homeless.
+        if (!hasRoomFor(target.getInventory(), item))
+            return false;
 
-            PipeRequestEvent event = new PipeRequestEvent(pipe, new ArrayList<>(Collections.singletonList(item.clone())), getBackBlock());
-            Bukkit.getPluginManager().callEvent(event);
+        BlockFace back = SignUtil.getBack(CraftBookBukkitUtil.toSign(getSign()).getBlock());
+        Block pipe = getBackBlock().getRelative(back);
 
-            if(!event.isValid())
-                return false;
+        // Extraction wish list: pipes replace it with matching items actually removed
+        // from the source container. The old plain request injected the wish into a
+        // normal pull cycle, which fabricated one item per trigger into the source.
+        PipeRequestEvent event = new PipeRequestEvent(pipe, new ArrayList<>(Collections.singletonList(item.clone())), getBackBlock());
+        event.setExtract(true);
+        Bukkit.getPluginManager().callEvent(event);
 
-            InventoryHolder c = (InventoryHolder) offset.getBlock().getState();
-            for(ItemStack stack : event.getItems())
-                if (c.getInventory().addItem(stack).isEmpty()) {
-                    //((BlockState) c).update();
-                    return true;
+        if(!event.isValid())
+            return false;
+
+        boolean stocked = false;
+        for (ItemStack stack : event.getItems()) {
+            if (stack == null)
+                continue;
+            java.util.Map<Integer, ItemStack> rest = target.getInventory().addItem(stack);
+            if (rest.isEmpty()) {
+                stocked = true;
+            } else if (pipe.getBlockData() instanceof org.bukkit.block.data.type.Piston piston) {
+                // The room check above makes this near-unreachable; if it ever happens,
+                // hand the overflow back to the source container rather than losing it.
+                Block source = pipe.getRelative(piston.getFacing());
+                if (InventoryUtil.doesBlockHaveInventory(source)) {
+                    InventoryUtil.addItemsToInventory((InventoryHolder) source.getState(),
+                            rest.values().toArray(new ItemStack[0]));
                 }
+            }
+        }
+        return stocked;
+    }
+
+    private static boolean hasRoomFor(org.bukkit.inventory.Inventory inv, ItemStack want) {
+        int room = 0;
+        for (ItemStack have : inv.getStorageContents()) {
+            if (have == null || have.getType() == org.bukkit.Material.AIR)
+                return true;
+            if (have.isSimilar(want))
+                room += have.getMaxStackSize() - have.getAmount();
+            if (room >= want.getAmount())
+                return true;
         }
         return false;
     }

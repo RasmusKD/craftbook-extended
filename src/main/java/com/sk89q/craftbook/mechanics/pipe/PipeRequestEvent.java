@@ -32,6 +32,24 @@ public class PipeRequestEvent extends PipeSuckEvent {
         this.usedTeleportPairs = new HashSet<>();
     }
 
+    private boolean extract;
+
+    /**
+     * Marks this request as an extraction wish list: the items describe what the requester
+     * wants pulled OUT of the pipe's source container, they are not real items. Pipes
+     * replaces the list with matching items actually removed from the source; nothing is
+     * distributed through the network and the wish itself is discarded. The old flow
+     * injected the wish into a normal pull cycle, where the leftover-return deposited it
+     * into the source container - fabricating one item per request out of thin air.
+     */
+    public void setExtract(boolean extract) {
+        this.extract = extract;
+    }
+
+    public boolean isExtract() {
+        return extract;
+    }
+
     public boolean isFromHop() {
         return fromHop;
     }

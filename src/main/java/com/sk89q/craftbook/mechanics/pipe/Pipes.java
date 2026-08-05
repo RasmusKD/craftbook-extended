@@ -1179,6 +1179,11 @@ public class Pipes extends AbstractCraftBookMechanic {
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onPipeRequest(PipeRequestEvent event) {
 
+        if (event.isExtract()) {
+            handleExtractRequest(event);
+            return;
+        }
+
         boolean stickyStart = event.getBlock().getType() == Material.STICKY_PISTON;
         boolean hopStart = event.isFromHop() && isValidPipeBlock(event.getBlock().getType());
 
@@ -1192,6 +1197,61 @@ public class Pipes extends AbstractCraftBookMechanic {
 
         Block hopReturn = event.isFromHop() ? event.getSuckedBlock() : null;
         startPipe(event.getBlock(), event.getItems(), true, hopReturn);
+    }
+
+    /**
+     * Serves an extraction wish list (MC1242): removes matching items from the container
+     * the sticky piston faces and hands them to the requester through the event's live
+     * list. No traversal runs and the wish items themselves are discarded, so an
+     * extraction can never fabricate items - the wish only shapes what real items leave
+     * the source. The piston's own [Pipe] sign filters still apply.
+     */
+    private void handleExtractRequest(PipeRequestEvent event) {
+        Block block = event.getBlock();
+        if (block.getType() != Material.STICKY_PISTON)
+            return;
+        if (pipeRequireSign && !getFilters(block).hasSign)
+            return;
+        if (!EventUtil.passesFilter(event))
+            return;
+
+        Piston p = (Piston) block.getBlockData();
+        Block fac = block.getRelative(p.getFacing());
+        if (!com.sk89q.craftbook.mechanics.ic.gates.world.miscellaneous.PipeLinkProtection.mayPipePull(block, fac))
+            return;
+        if (!InventoryUtil.doesBlockHaveInventory(fac))
+            return;
+
+        CachedFilters signFilters = getFilters(block);
+        org.bukkit.inventory.Inventory source = ((InventoryHolder) PaperLib.getBlockState(fac, false).getState()).getInventory();
+
+        List<ItemStack> wish = new ArrayList<>(event.getItems());
+        event.getItems().clear();
+        for (ItemStack want : wish) {
+            if (!ItemUtil.isStackValid(want))
+                continue;
+            int needed = want.getAmount();
+            for (int slot = 0; slot < source.getSize() && needed > 0; slot++) {
+                ItemStack have = source.getItem(slot);
+                if (!ItemUtil.isStackValid(have))
+                    continue;
+                if (!ItemUtil.areItemsIdentical(have, want))
+                    continue;
+                if (!ItemUtil.doesItemPassLooseFilters(have, signFilters.filters, signFilters.exceptions))
+                    continue;
+                int take = Math.min(needed, have.getAmount());
+                ItemStack taken = have.clone();
+                taken.setAmount(take);
+                if (take >= have.getAmount()) {
+                    source.setItem(slot, null);
+                } else {
+                    have.setAmount(have.getAmount() - take);
+                    source.setItem(slot, have);
+                }
+                event.getItems().add(taken);
+                needed -= take;
+            }
+        }
     }
 
     private boolean pipesDiagonal;

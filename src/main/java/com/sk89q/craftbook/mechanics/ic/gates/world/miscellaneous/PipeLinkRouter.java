@@ -129,6 +129,10 @@ public class PipeLinkRouter implements Listener {
 
     @EventHandler(ignoreCancelled = true)
     public void onRequest(PipeRequestEvent e) {
+        // Extraction wish lists (MC1242) carry phantom items - routing them through a
+        // link would materialise the wish at the receiver.
+        if (e.isExtract())
+            return;
         // includeBack matches onSuck: a sender sign mounted ON the piston must route
         // magnet/hop-driven requests the same way it routes redstone-driven pulls.
         SenderHit hit = findSender(e.getBlock(), true);
