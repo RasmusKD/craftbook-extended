@@ -378,6 +378,7 @@ public class ICManager {
         registerIC("MC1244", "animal harv", new AnimalHarvester.Factory(server), familySISO, familyAISO);
         registerIC("MC1245", "cont stkr", new ContainerStacker.Factory(server), familySISO, familyAISO);
         registerIC("MC1246", "xp spawner", new XPSpawner.Factory(server), familySISO, familyAISO); //Restricted
+        registerIC("MC1247", "feeder", new ContainerFeeder.Factory(server), familySISO, familyAISO);
         //TODO Dyed Armour Spawner (MC1247) (Sign Title: DYE ARMOUR)
         registerIC("MC1248", "driller", new Driller.Factory(server), familySISO, familyAISO); //Restricted
         registerIC("MC1249", "replacer", new BlockReplacer.Factory(server), familySISO, familyAISO); //Restricted
