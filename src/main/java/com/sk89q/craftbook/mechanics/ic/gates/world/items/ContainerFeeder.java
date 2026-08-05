@@ -39,7 +39,10 @@ public class ContainerFeeder extends AbstractSelfTriggeredIC {
     public void load() {
         BlockFace parsed = parseDirection(getLine(2));
         direction = parsed == null ? BlockFace.DOWN : parsed; // hopper's default
-        amount = 1;
+        // A whole stack per think is the efficient default: one addItem call costs
+        // nearly the same regardless of size, so items-per-work is maximised. Players
+        // write a smaller number on line 4 when they want a slower feed.
+        amount = 64;
         try {
             amount = Math.max(1, Math.min(64, Integer.parseInt(getLine(3).trim())));
         } catch (NumberFormatException ignored) {
@@ -175,7 +178,7 @@ public class ContainerFeeder extends AbstractSelfTriggeredIC {
                         "Line 3 must be a direction: up, down, north, south, east or west.");
             String line4 = sign.getLine(3).trim();
             if (line4.isEmpty()) {
-                sign.setLine(3, "1");
+                sign.setLine(3, "64");
             } else {
                 try {
                     int perTick = Integer.parseInt(line4);
