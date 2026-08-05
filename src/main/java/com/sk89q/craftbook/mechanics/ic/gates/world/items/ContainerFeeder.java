@@ -37,8 +37,7 @@ public class ContainerFeeder extends AbstractSelfTriggeredIC {
 
     @Override
     public void load() {
-        BlockFace parsed = parseDirection(getLine(2));
-        direction = parsed == null ? BlockFace.DOWN : parsed; // hopper's default
+        direction = resolveDirection(getLine(2));
         // A whole stack per think is the efficient default: one addItem call costs
         // nearly the same regardless of size, so items-per-work is maximised. Players
         // write a smaller number on line 4 when they want a slower feed.
@@ -49,7 +48,7 @@ public class ContainerFeeder extends AbstractSelfTriggeredIC {
         }
     }
 
-    /** Null when the line is not a recognised direction. */
+    /** Null when the line is not a recognised absolute direction. */
     private static BlockFace parseDirection(String line) {
         return switch (line.trim().toLowerCase(Locale.ROOT)) {
             case "up", "u", "op" -> BlockFace.UP;
@@ -60,6 +59,41 @@ public class ContainerFeeder extends AbstractSelfTriggeredIC {
             case "west", "w", "v", "vest" -> BlockFace.WEST;
             default -> null;
         };
+    }
+
+    private static boolean isRelativeDirection(String line) {
+        return switch (line.trim().toLowerCase(Locale.ROOT)) {
+            case "left", "l", "venstre", "right", "r", "hoejre", "højre" -> true;
+            case "behind", "back", "forward", "frem", "bagved", "bagud" -> true;
+            default -> false;
+        };
+    }
+
+    /**
+     * Left/right are from the perspective of the player reading the sign - the way you
+     * describe your own build while standing in front of it. Calibrated empirically:
+     * SignUtil's getLeft/getRight match the reader's hands (their javadoc is mirrored,
+     * their implementation is not).
+     */
+    private BlockFace resolveDirection(String line) {
+        String token = line.trim().toLowerCase(Locale.ROOT);
+        Block signBlock = com.sk89q.craftbook.bukkit.util.CraftBookBukkitUtil.toSign(getSign()) != null
+                ? com.sk89q.craftbook.bukkit.util.CraftBookBukkitUtil.toSign(getSign()).getBlock() : null;
+        if (signBlock != null) {
+            switch (token) {
+                case "left", "l", "venstre":
+                    return com.sk89q.craftbook.util.SignUtil.getLeft(signBlock);
+                case "right", "r", "hoejre", "højre":
+                    return com.sk89q.craftbook.util.SignUtil.getRight(signBlock);
+                case "behind", "back", "forward", "frem", "bagved", "bagud":
+                    // The far side of the container, straight through from the reader.
+                    return com.sk89q.craftbook.util.SignUtil.getBack(signBlock);
+                default:
+                    break;
+            }
+        }
+        BlockFace parsed = parseDirection(token);
+        return parsed == null ? BlockFace.DOWN : parsed; // hopper's default
     }
 
     @Override
@@ -173,9 +207,9 @@ public class ContainerFeeder extends AbstractSelfTriggeredIC {
             String line3 = sign.getLine(2).trim();
             if (line3.isEmpty())
                 sign.setLine(2, "down");
-            else if (parseDirection(line3) == null)
+            else if (parseDirection(line3) == null && !isRelativeDirection(line3))
                 throw new com.sk89q.craftbook.mechanics.ic.ICVerificationException(
-                        "Line 3 must be a direction: up, down, north, south, east or west.");
+                        "Line 3 must be a direction: up, down, north, south, east, west, left, right or behind.");
             String line4 = sign.getLine(3).trim();
             if (line4.isEmpty()) {
                 sign.setLine(3, "64");
