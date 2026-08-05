@@ -79,7 +79,27 @@ public class ContainerFeeder extends AbstractSelfTriggeredIC {
         feed();
     }
 
+    /**
+     * A think that moved nothing (full target, missing target, empty source) rests the
+     * feeder briefly instead of rescanning both inventories every think - the same idea
+     * as Paper's cooldown-when-full on hoppers, which retry every 8 game ticks when
+     * blocked. IC instances are cached per location, so the state survives between
+     * thinks; a cache eviction merely resets the rest, which is harmless.
+     */
+    private static final long IDLE_REST_MILLIS = 500L;
+    private long restUntil;
+
     public boolean feed() {
+        long now = System.currentTimeMillis();
+        if (now < restUntil)
+            return false;
+        boolean moved = doFeed();
+        if (!moved)
+            restUntil = now + IDLE_REST_MILLIS;
+        return moved;
+    }
+
+    private boolean doFeed() {
         Block source = getBackBlock();
         if (!InventoryUtil.doesBlockHaveInventory(source))
             return false;
