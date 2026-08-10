@@ -461,6 +461,9 @@ public class CraftBookPlugin extends JavaPlugin {
         getServer().getPluginManager().registerEvents(PipeLinkRouter.get(), this);
         getServer().getPluginManager().registerEvents(new PipeLinkBindListener(), this);
         getServer().getPluginManager().registerEvents(new PipeLinkBreakListener(), this);
+        if (isDebugFlagEnabled("spawnlab")) {
+            getServer().getPluginManager().registerEvents(new SpawnLabListener(), this);
+        }
         if (isDebugFlagEnabled("pipes")) {
             getServer().getPluginManager().registerEvents(new PipeAllDebugListener(), this);
         }
