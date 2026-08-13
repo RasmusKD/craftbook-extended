@@ -29,7 +29,8 @@ public class SpawnLabListener implements Listener {
                 mode = "none";
             }
             CraftBookPlugin.logger().info("[SpawnLab] 10s mode=" + mode + ": natural=" + naturalSeen
-                    + " cancelled=" + naturalCancelled + " pre=" + preSeen + " preCancelled=" + preCancelled);
+                    + " cancelled=" + naturalCancelled + " pre=" + preSeen + " preCancelled=" + preCancelled
+                    + backoffReport());
             naturalSeen = naturalCancelled = preSeen = preCancelled = 0;
         }, 200L, 200L);
     }
@@ -54,5 +55,46 @@ public class SpawnLabListener implements Listener {
             event.setCancelled(true);
             preCancelled++;
         }
+    }
+
+    /**
+     * Reads Paper's per player mob cap counters straight off the server player.
+     *
+     * mobCounts is what the player actually has near them; mobBackoffCounts is what
+     * Paper adds on top for every cancelled PreCreatureSpawnEvent nearby, and
+     * getMobCountNear returns the sum. Inferring the second one from how many mobs are
+     * standing around is hopeless, because that number also moves with despawning and
+     * wandering, so it is read directly. Reflection because it is an NMS field, and
+     * best effort because a mapping change should degrade to no report, not an error.
+     */
+    private String backoffReport() {
+        StringBuilder sb = new StringBuilder();
+        for (org.bukkit.entity.Player p : Bukkit.getOnlinePlayers()) {
+            try {
+                Object handle = p.getClass().getMethod("getHandle").invoke(p);
+                int[] counts = (int[]) readField(handle, "mobCounts");
+                int[] backoff = (int[]) readField(handle, "mobBackoffCounts");
+                if (counts == null || backoff == null) continue;
+                sb.append(" | ").append(p.getName())
+                  .append(" monsters=").append(counts[0])
+                  .append(" backoff=").append(backoff[0])
+                  .append(" effective=").append(counts[0] + backoff[0]);
+            } catch (Throwable ignored) {}
+        }
+        return sb.toString();
+    }
+
+    private static Object readField(Object target, String name) {
+        for (Class<?> c = target.getClass(); c != null; c = c.getSuperclass()) {
+            try {
+                java.lang.reflect.Field f = c.getDeclaredField(name);
+                f.setAccessible(true);
+                return f.get(target);
+            } catch (NoSuchFieldException ignored) {
+            } catch (Throwable t) {
+                return null;
+            }
+        }
+        return null;
     }
 }

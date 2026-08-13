@@ -7,6 +7,7 @@ import com.sk89q.craftbook.mechanics.ic.ChipState;
 import com.sk89q.craftbook.mechanics.ic.IC;
 import com.sk89q.craftbook.mechanics.ic.ICFactory;
 import com.sk89q.craftbook.util.InventoryUtil;
+import com.sk89q.craftbook.util.SignUtil;
 import com.sk89q.craftbook.util.ItemUtil;
 import io.papermc.lib.PaperLib;
 import org.bukkit.Server;
@@ -81,9 +82,14 @@ public class ContainerFeeder extends AbstractSelfTriggeredIC {
      * their implementation is not).
      */
     private BlockFace resolveDirection(String line) {
-        String token = line.trim().toLowerCase(Locale.ROOT);
         Block signBlock = com.sk89q.craftbook.bukkit.util.CraftBookBukkitUtil.toSign(getSign()) != null
                 ? com.sk89q.craftbook.bukkit.util.CraftBookBukkitUtil.toSign(getSign()).getBlock() : null;
+        return resolveDirection(line, signBlock);
+    }
+
+    /** Same resolution for any sign block, so the loop check can read other feeders. */
+    static BlockFace resolveDirection(String line, Block signBlock) {
+        String token = line.trim().toLowerCase(Locale.ROOT);
         if (signBlock != null) {
             switch (token) {
                 case "left", "l", "venstre":
@@ -160,12 +166,41 @@ public class ContainerFeeder extends AbstractSelfTriggeredIC {
         return moved;
     }
 
+    /**
+     * A ring of feeders moves items round forever with no net effect, and because every
+     * feeder in it DOES move something, the idle rest never engages: it runs flat out and
+     * looks frozen. Placement already refuses a sign that closes a ring, but a ring can
+     * still appear without any sign being placed, by dropping in the container that joins
+     * two chains, and rings built before this check existed are still out there.
+     *
+     * So the feeder also checks itself. The gate is cheap: a ring is only possible if the
+     * target container carries a feeder of its own, which is a handful of block reads, and
+     * only then is the chain walked. The answer is cached and revalidated on an interval,
+     * because containers and signs change far more slowly than thinks happen.
+     */
+    private static final long LOOP_RECHECK_MILLIS = 30_000L;
+    private long loopCheckedAt;
+    private boolean feedsALoop;
+
+    private boolean feedsALoop(Block source, Block target) {
+        long now = System.currentTimeMillis();
+        if (now < loopCheckedAt)
+            return feedsALoop;
+        loopCheckedAt = now + LOOP_RECHECK_MILLIS;
+        feedsALoop = Factory.chainReturnsTo(source, target);
+        if (feedsALoop && com.sk89q.craftbook.bukkit.CraftBookPlugin.isDebugFlagEnabled("st.feeder"))
+            com.sk89q.craftbook.bukkit.CraftBookPlugin.logger().info("[Feeder] sleeping, feeds a loop @" + source.getX() + "," + source.getY() + "," + source.getZ());
+        return feedsALoop;
+    }
+
     private boolean doFeed() {
         Block source = getBackBlock();
         if (!InventoryUtil.doesBlockHaveInventory(source))
             return false;
         Block target = source.getRelative(direction);
         if (!InventoryUtil.doesBlockHaveInventory(target))
+            return false;
+        if (feedsALoop(source, target))
             return false;
 
         io.papermc.lib.features.blockstatesnapshot.BlockStateSnapshotResult srcRes = PaperLib.getBlockState(source, false);
@@ -236,16 +271,132 @@ public class ContainerFeeder extends AbstractSelfTriggeredIC {
             return new String[] {"direction: up/down/north/south/east/west", "items per tick (1-64)"};
         }
 
+
+        /**
+         * One feeder per container. A second sign on the same chest or barrel does not
+         * feed twice as fast, it just races the first one over the same stacks and makes
+         * the output order impossible to reason about, so the second sign is refused at
+         * placement rather than left to misbehave quietly.
+         *
+         * Only signs attached to the same container count. Two feeders on neighbouring
+         * containers are fine, and a feeder whose target happens to be another feeder's
+         * source is fine too, since that is a chain rather than a duplicate.
+         */
+        private static void rejectIfContainerAlreadyFed(ChangedSign sign)
+                throws com.sk89q.craftbook.mechanics.ic.ICVerificationException {
+            org.bukkit.block.Block signBlock = com.sk89q.craftbook.bukkit.util.CraftBookBukkitUtil.toSign(sign).getBlock();
+            org.bukkit.block.Block container = SignUtil.getBackBlock(signBlock);
+            if (container == null || !InventoryUtil.doesBlockHaveInventory(container))
+                return;
+
+            for (BlockFace face : new BlockFace[] {BlockFace.NORTH, BlockFace.SOUTH, BlockFace.EAST,
+                    BlockFace.WEST, BlockFace.UP, BlockFace.DOWN}) {
+                org.bukkit.block.Block other = container.getRelative(face);
+                if (other.equals(signBlock) || !SignUtil.isSign(other))
+                    continue;
+                // Only the sign hanging on THIS container, not one that merely sits nearby
+                // on a different block.
+                if (!container.equals(SignUtil.getBackBlock(other)))
+                    continue;
+                String id = com.sk89q.craftbook.bukkit.util.CraftBookBukkitUtil.toChangedSign(other).getLine(1).trim();
+                if (id.equalsIgnoreCase("[MC1247]") || id.equalsIgnoreCase("[MC1247]S"))
+                    throw new com.sk89q.craftbook.mechanics.ic.ICVerificationException(
+                            "Den beholder har allerede et feeder-skilt. Kun ét per kiste eller tønde.");
+            }
+        }
+
+
+        /**
+         * Refuses a feeder that would close a cycle. A ring of feeders (up, right, down,
+         * left, back to the start) moves items round forever with no net effect, so it
+         * costs a container-to-container transfer every think and produces nothing.
+         *
+         * Walking the chain is only unambiguous because a container may hold one feeder,
+         * which rejectIfContainerAlreadyFed already guarantees. The walk is bounded, and
+         * it stops at the first container without a feeder, so an ordinary chain is
+         * cheap to check.
+         */
+        private static void rejectIfItClosesALoop(ChangedSign sign)
+                throws com.sk89q.craftbook.mechanics.ic.ICVerificationException {
+            org.bukkit.block.Block signBlock = com.sk89q.craftbook.bukkit.util.CraftBookBukkitUtil.toSign(sign).getBlock();
+            org.bukkit.block.Block source = SignUtil.getBackBlock(signBlock);
+            if (source == null || !InventoryUtil.doesBlockHaveInventory(source))
+                return;
+
+            BlockFace first = resolveDirection(sign.getLine(2), signBlock);
+            if (chainReturnsTo(source, source.getRelative(first)))
+                throw new com.sk89q.craftbook.mechanics.ic.ICVerificationException(
+                        "Det skilt ville lukke en ring af feeders. Items ville bare køre rundt i ring.");
+        }
+
+        /**
+         * Whether following the feeders forward from {@code target} leads back to
+         * {@code source}. Cheap in the ordinary case: a container with no feeder of its
+         * own ends the walk immediately, so nothing is walked unless a chain exists.
+         */
+        static boolean chainReturnsTo(org.bukkit.block.Block source, org.bukkit.block.Block target) {
+            org.bukkit.block.Block current = target;
+            java.util.Set<String> seen = new java.util.HashSet<>();
+            seen.add(key(source));
+
+            for (int step = 0; step < MAX_CHAIN_WALK; step++) {
+                // Never pull chunks in to run this check. A chain that leaves loaded
+                // ground cannot be feeding anything right now anyway, and forcing the
+                // world to load for it would cost more than the ring.
+                if (!current.getWorld().isChunkLoaded(current.getX() >> 4, current.getZ() >> 4))
+                    return false;
+                if (!InventoryUtil.doesBlockHaveInventory(current))
+                    return false;                 // chain ends in something that is not a container
+                if (current.equals(source))
+                    return true;
+                if (!seen.add(key(current)))
+                    return false;                 // a loop further along that does not include us
+                org.bukkit.block.Block next = followFeeder(current);
+                if (next == null)
+                    return false;                 // no feeder on this container, chain ends
+                current = next;
+            }
+            return false;
+        }
+
+        /**
+         * Only a safety stop: the visited set already guarantees the walk terminates.
+         * It is generous because the walk runs once, when a sign is placed, and a
+         * player who builds a ring of hundreds of containers should still be told.
+         */
+        private static final int MAX_CHAIN_WALK = 512;
+
+        private static String key(org.bukkit.block.Block b) {
+            return b.getWorld().getName() + ':' + b.getX() + ',' + b.getY() + ',' + b.getZ();
+        }
+
+        /** The container this one feeds into, or null if it has no feeder sign. */
+        private static org.bukkit.block.Block followFeeder(org.bukkit.block.Block container) {
+            for (BlockFace face : new BlockFace[] {BlockFace.NORTH, BlockFace.SOUTH, BlockFace.EAST,
+                    BlockFace.WEST, BlockFace.UP, BlockFace.DOWN}) {
+                org.bukkit.block.Block other = container.getRelative(face);
+                if (!SignUtil.isSign(other) || !container.equals(SignUtil.getBackBlock(other)))
+                    continue;
+                ChangedSign cs = com.sk89q.craftbook.bukkit.util.CraftBookBukkitUtil.toChangedSign(other);
+                String id = cs.getLine(1).trim();
+                if (!id.equalsIgnoreCase("[MC1247]") && !id.equalsIgnoreCase("[MC1247]S"))
+                    continue;
+                return container.getRelative(resolveDirection(cs.getLine(2), other));
+            }
+            return null;
+        }
+
         // Write the effective defaults onto empty lines so the sign documents itself,
         // and reject typos instead of silently feeding downwards.
         @Override
         public void verify(ChangedSign sign) throws com.sk89q.craftbook.mechanics.ic.ICVerificationException {
+            rejectIfContainerAlreadyFed(sign);
             String line3 = sign.getLine(2).trim();
             if (line3.isEmpty())
                 sign.setLine(2, "down");
             else if (parseDirection(line3) == null && !isRelativeDirection(line3))
                 throw new com.sk89q.craftbook.mechanics.ic.ICVerificationException(
-                        "Line 3 must be a direction: up, down, north, south, east, west, left, right or behind.");
+                        "Linje 3 skal være en retning: up, down, north, south, east, west, left, right eller behind.");
             String line4 = sign.getLine(3).trim();
             if (line4.isEmpty()) {
                 sign.setLine(3, "64");
@@ -253,11 +404,12 @@ public class ContainerFeeder extends AbstractSelfTriggeredIC {
                 try {
                     int perTick = Integer.parseInt(line4);
                     if (perTick < 1 || perTick > 64)
-                        throw new com.sk89q.craftbook.mechanics.ic.ICVerificationException("Line 4 must be 1-64 items per tick.");
+                        throw new com.sk89q.craftbook.mechanics.ic.ICVerificationException("Linje 4 skal være 1-64 items per tick.");
                 } catch (NumberFormatException e) {
-                    throw new com.sk89q.craftbook.mechanics.ic.ICVerificationException("Line 4 must be a number: items per tick (1-64).");
+                    throw new com.sk89q.craftbook.mechanics.ic.ICVerificationException("Linje 4 skal være et tal: items per tick (1-64).");
                 }
             }
+            rejectIfItClosesALoop(sign);
         }
     }
 }
