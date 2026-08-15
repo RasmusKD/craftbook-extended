@@ -941,7 +941,8 @@ public class Pipes extends AbstractCraftBookMechanic {
                     || facType == Material.CHISELED_BOOKSHELF
                     || facType == Material.CRAFTER
                     || facType == Material.DECORATED_POT
-                    || Tag.SHULKER_BOXES.isTagged(facType)) {
+                    || Tag.SHULKER_BOXES.isTagged(facType)
+                    || InventoryUtil.isShelf(facType)) {
                 InventoryHolder sourceHolder = (InventoryHolder) PaperLib.getBlockState(fac, false).getState();
                 // Per-slot reads instead of getContents(): that call copies the whole
                 // inventory array every pulse just to pull one stack.

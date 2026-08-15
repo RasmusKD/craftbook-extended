@@ -1,6 +1,9 @@
 package com.sk89q.craftbook.util;
 
+import org.bukkit.Bukkit;
 import org.bukkit.Material;
+import org.bukkit.NamespacedKey;
+import org.bukkit.Tag;
 import org.bukkit.block.Block;
 import org.bukkit.block.BrewingStand;
 import org.bukkit.block.Chest;
@@ -46,6 +49,25 @@ public class InventoryUtil {
      * @param stacks The stacks to add to the inventory.
      * @return The stacks that could not be added.
      */
+    /**
+     * The wooden_shelves block tag, resolved at runtime so this compiles
+     * against a pre-shelf API and stays inert (null) on servers without
+     * shelves. Shelves are ordinary 3-slot containers: vanilla hoppers
+     * insert and extract, so pipes and feeders treat them the same.
+     */
+    private static final Tag<Material> WOODEN_SHELVES =
+            Bukkit.getTag(Tag.REGISTRY_BLOCKS, NamespacedKey.minecraft("wooden_shelves"), Material.class);
+
+    /**
+     * Checks whether a material is a shelf.
+     *
+     * @param type The material to check.
+     * @return If the material is a shelf.
+     */
+    public static boolean isShelf(Material type) {
+        return WOODEN_SHELVES != null && WOODEN_SHELVES.isTagged(type);
+    }
+
     public static List<ItemStack> addItemsToInventory(InventoryHolder container, boolean update, ItemStack ... stacks) {
 
         if(container instanceof Furnace) {
@@ -404,7 +426,7 @@ public class InventoryUtil {
             case CRAFTER:
                 return true;
             default:
-                return false;
+                return isShelf(block.getType());
         }
     }
 
