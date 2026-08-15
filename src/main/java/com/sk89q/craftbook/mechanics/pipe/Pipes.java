@@ -956,7 +956,7 @@ public class Pipes extends AbstractCraftBookMechanic {
                     if(!ItemUtil.doesItemPassLooseFilters(stack, filters, exceptions))
                         continue;
 
-                    items.add(stack);
+                    items.add(stack.clone());
                     sourceHolder.getInventory().setItem(slot, null);
                     auditTaken(fac, stack, sourceHolder.getInventory().getItem(slot));
                     if (pipeStackPerPull) {
@@ -970,6 +970,13 @@ public class Pipes extends AbstractCraftBookMechanic {
                 for (ItemStack pulled : items)
                     if (pulled != null)
                         pulledAmount += pulled.getAmount();
+
+                // A FRESH state, captured after the slot writes: the holder's own
+                // state predates the pull, and updating that writes the pre-pull
+                // contents back into the world (measured on 26.2: the pulled item
+                // reappeared in the shelf after landing in the target).
+                if (pulledAmount > 0 && InventoryUtil.isShelf(facType))
+                    fac.getState().update(true, false);
 
                 PipeSuckEvent event = new PipeSuckEvent(block, new ArrayList<>(items), fac);
                 Bukkit.getPluginManager().callEvent(event);

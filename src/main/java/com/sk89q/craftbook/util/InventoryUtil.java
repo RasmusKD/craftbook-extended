@@ -119,6 +119,15 @@ public class InventoryUtil {
                 ((Chest) ((DoubleChestInventory) container.getInventory()).getLeftSide().getHolder()).update(true);
                 ((Chest) ((DoubleChestInventory) container.getInventory()).getRightSide().getHolder()).update(true);
             }
+            // Shelves render their contents, and vanilla only resyncs the
+            // display on player interaction; without this, clients show stale
+            // items after an insert until the chunk reloads.
+            if (container instanceof org.bukkit.block.BlockState
+                    && isShelf(((org.bukkit.block.BlockState) container).getType())) {
+                // A FRESH state, captured after the insert; updating the holder's
+                // own pre-insert state would write the old contents back.
+                ((org.bukkit.block.BlockState) container).getBlock().getState().update(true, false);
+            }
             //if(container instanceof BlockState && update)
             //    ((BlockState) container).update();
             return leftovers;
