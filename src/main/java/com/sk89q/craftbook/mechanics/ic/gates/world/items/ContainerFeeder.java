@@ -195,6 +195,15 @@ public class ContainerFeeder extends AbstractSelfTriggeredIC {
 
     private boolean doFeed() {
         Block source = getBackBlock();
+        if (source.getType() == org.bukkit.Material.HOPPER) {
+            // A hopper moves items on its own: a feeder on one double-moves and
+            // keeps feeding while the hopper is redstone-locked, so the sign
+            // pops off instead of quietly misbehaving. Placement is refused in
+            // verify(); this catches signs that predate the rule or got a
+            // hopper swapped in underneath.
+            com.sk89q.craftbook.bukkit.util.CraftBookBukkitUtil.toSign(getSign()).getBlock().breakNaturally();
+            return false;
+        }
         if (!InventoryUtil.doesBlockHaveInventory(source))
             return false;
         Block target = source.getRelative(direction);
@@ -391,6 +400,11 @@ public class ContainerFeeder extends AbstractSelfTriggeredIC {
         // and reject typos instead of silently feeding downwards.
         @Override
         public void verify(ChangedSign sign) throws com.sk89q.craftbook.mechanics.ic.ICVerificationException {
+            org.bukkit.block.Block back = SignUtil.getBackBlock(
+                    com.sk89q.craftbook.bukkit.util.CraftBookBukkitUtil.toSign(sign).getBlock());
+            if (back != null && back.getType() == org.bukkit.Material.HOPPER)
+                throw new com.sk89q.craftbook.mechanics.ic.ICVerificationException(
+                        "Feedere kan ikke sidde på en hopper. Hopperen flytter allerede selv items.");
             rejectIfContainerAlreadyFed(sign);
             String line3 = sign.getLine(2).trim();
             if (line3.isEmpty())
