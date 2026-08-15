@@ -79,6 +79,9 @@ public class InventoryUtil {
      * @return If the material is a generic container.
      */
     public static boolean hasGenericInventory(Material type) {
+        if (Tag.SHULKER_BOXES.isTagged(type) || isShelf(type)) {
+            return true;
+        }
         switch(type) {
             case CHEST:
             case TRAPPED_CHEST:
@@ -91,7 +94,7 @@ public class InventoryUtil {
             case CRAFTER:
                 return true;
             default:
-                return Tag.SHULKER_BOXES.isTagged(type) || isShelf(type);
+                return false;
         }
     }
 
