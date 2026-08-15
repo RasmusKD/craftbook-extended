@@ -69,6 +69,36 @@ public class InventoryUtil {
     }
 
     /**
+     * Publishes a display container's contents after a plugin-side mutation.
+     * Player interaction is the only thing vanilla syncs on, so a pipe or
+     * feeder edit otherwise leaves clients rendering stale contents. The two
+     * mechanisms differ: chiseled bookshelves render and emit comparator
+     * signal from their slot_X_occupied blockstate properties, while shelves
+     * render straight from block-entity data, which a fresh post-mutation
+     * state update rebroadcasts. Every other container is a no-op here.
+     *
+     * @param block The container block that was mutated.
+     */
+    public static void syncDisplayedContainer(Block block) {
+        Material type = block.getType();
+        if (type == Material.CHISELED_BOOKSHELF) {
+            org.bukkit.block.BlockState state = block.getState();
+            if (!(state instanceof ChiseledBookshelf))
+                return;
+            Inventory inv = ((ChiseledBookshelf) state).getInventory();
+            org.bukkit.block.data.BlockData data = block.getBlockData();
+            if (!(data instanceof org.bukkit.block.data.type.ChiseledBookshelf))
+                return;
+            org.bukkit.block.data.type.ChiseledBookshelf occupancy = (org.bukkit.block.data.type.ChiseledBookshelf) data;
+            for (int i = 0; i < inv.getSize(); i++)
+                occupancy.setSlotOccupied(i, ItemUtil.isStackValid(inv.getItem(i)));
+            block.setBlockData(occupancy, false);
+        } else if (isShelf(type)) {
+            block.getState().update(true, false);
+        }
+    }
+
+    /**
      * Checks whether a material is a container whose whole inventory is plain
      * item slots, safe to insert into or pull from generically. Furnaces,
      * smokers, blast furnaces and brewing stands are containers too but have
@@ -119,15 +149,8 @@ public class InventoryUtil {
                 ((Chest) ((DoubleChestInventory) container.getInventory()).getLeftSide().getHolder()).update(true);
                 ((Chest) ((DoubleChestInventory) container.getInventory()).getRightSide().getHolder()).update(true);
             }
-            // Shelves render their contents, and vanilla only resyncs the
-            // display on player interaction; without this, clients show stale
-            // items after an insert until the chunk reloads.
-            if (container instanceof org.bukkit.block.BlockState
-                    && isShelf(((org.bukkit.block.BlockState) container).getType())) {
-                // A FRESH state, captured after the insert; updating the holder's
-                // own pre-insert state would write the old contents back.
-                ((org.bukkit.block.BlockState) container).getBlock().getState().update(true, false);
-            }
+            if (container instanceof org.bukkit.block.BlockState)
+                syncDisplayedContainer(((org.bukkit.block.BlockState) container).getBlock());
             //if(container instanceof BlockState && update)
             //    ((BlockState) container).update();
             return leftovers;
@@ -300,6 +323,7 @@ public class InventoryUtil {
         stacks = Arrays.stream(stacks).filter(item -> ItemUtil.isAStorableBook(item)).toArray(ItemStack[]::new);
 
         leftovers.addAll(chiseledBookshelf.getInventory().addItem(stacks).values());
+        syncDisplayedContainer(chiseledBookshelf.getBlock());
 
         return leftovers;
     }

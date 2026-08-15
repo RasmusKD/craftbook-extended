@@ -245,6 +245,7 @@ public class ContainerFeeder extends AbstractSelfTriggeredIC {
                 stack.setAmount(stack.getAmount() - moved);
                 src.setItem(slot, stack);
             }
+            InventoryUtil.syncDisplayedContainer(source);
             return true;
         }
         return false;
