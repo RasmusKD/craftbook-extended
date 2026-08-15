@@ -17,6 +17,10 @@ import org.bukkit.event.entity.CreatureSpawnEvent;
 public class SpawnLabListener implements Listener {
 
     private long naturalSeen, naturalCancelled, preSeen, preCancelled;
+    // Spawns that actually landed inside the measurement box, counted at MONITOR after
+    // every other plugin has had its say, so a cancelled one is not counted. Standing
+    // mob counts move with wandering and despawning; this does not.
+    private long inBoxSurvived;
     private volatile String mode = "none";
 
     public SpawnLabListener() {
@@ -30,8 +34,9 @@ public class SpawnLabListener implements Listener {
             }
             CraftBookPlugin.logger().info("[SpawnLab] 10s mode=" + mode + ": natural=" + naturalSeen
                     + " cancelled=" + naturalCancelled + " pre=" + preSeen + " preCancelled=" + preCancelled
+                    + " inBox=" + inBoxSurvived
                     + backoffReport());
-            naturalSeen = naturalCancelled = preSeen = preCancelled = 0;
+            naturalSeen = naturalCancelled = preSeen = preCancelled = inBoxSurvived = 0;
         }, 200L, 200L);
     }
 
@@ -44,6 +49,24 @@ public class SpawnLabListener implements Listener {
             event.setCancelled(true);
             naturalCancelled++;
         }
+    }
+
+    /** Box is set from a file so a measurement run can move it without a rebuild. */
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onSpawnSurvived(CreatureSpawnEvent event) {
+        if (event.getSpawnReason() != CreatureSpawnEvent.SpawnReason.NATURAL)
+            return;
+        try {
+            java.nio.file.Path f = CraftBookPlugin.inst().getDataFolder().toPath().resolve("spawnlab-box.txt");
+            if (!java.nio.file.Files.exists(f)) return;
+            String[] p = java.nio.file.Files.readString(f).trim().split("[ ,]+");
+            org.bukkit.Location l = event.getLocation();
+            if (!l.getWorld().getName().equals(p[0])) return;
+            if (l.getBlockX() < Integer.parseInt(p[1]) || l.getBlockX() > Integer.parseInt(p[4])) return;
+            if (l.getBlockY() < Integer.parseInt(p[2]) || l.getBlockY() > Integer.parseInt(p[5])) return;
+            if (l.getBlockZ() < Integer.parseInt(p[3]) || l.getBlockZ() > Integer.parseInt(p[6])) return;
+            inBoxSurvived++;
+        } catch (Exception ignored) {}
     }
 
     @EventHandler(priority = EventPriority.LOWEST)
