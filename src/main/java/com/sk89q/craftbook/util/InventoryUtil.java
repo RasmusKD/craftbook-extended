@@ -79,6 +79,16 @@ public class InventoryUtil {
      *
      * @param block The container block that was mutated.
      */
+    /**
+     * Checks whether a container renders its contents in the world.
+     *
+     * @param type The material to check.
+     * @return If the container is a display container.
+     */
+    public static boolean isDisplayedContainer(Material type) {
+        return type == Material.CHISELED_BOOKSHELF || isShelf(type);
+    }
+
     public static void syncDisplayedContainer(Block block) {
         Material type = block.getType();
         if (type == Material.CHISELED_BOOKSHELF) {

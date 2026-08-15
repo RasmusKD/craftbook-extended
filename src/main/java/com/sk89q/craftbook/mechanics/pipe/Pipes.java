@@ -941,7 +941,8 @@ public class Pipes extends AbstractCraftBookMechanic {
                 // accepts (returned as leftovers) cannot block everything behind it.
                 int startSlot = 0;
                 Long2IntOpenHashMap cursor = null;
-                if (pipeRoundRobinPull && pipeStackPerPull && slots > 0) {
+                if (pipeRoundRobinPull && pipeStackPerPull && slots > 0
+                        && !InventoryUtil.isDisplayedContainer(facType)) {
                     cursor = caches(block.getWorld()).pullCursor;
                     startSlot = cursor.get(posKey(block)) % slots;
                 }
