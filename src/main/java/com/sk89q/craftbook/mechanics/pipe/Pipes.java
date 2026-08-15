@@ -25,7 +25,6 @@ import io.papermc.lib.PaperLib;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
-import org.bukkit.Tag;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
@@ -932,17 +931,7 @@ public class Pipes extends AbstractCraftBookMechanic {
                 }
             }
 
-            if (facType == Material.CHEST
-                    || facType == Material.TRAPPED_CHEST
-                    || facType == Material.DROPPER
-                    || facType == Material.DISPENSER
-                    || facType == Material.HOPPER
-                    || facType == Material.BARREL
-                    || facType == Material.CHISELED_BOOKSHELF
-                    || facType == Material.CRAFTER
-                    || facType == Material.DECORATED_POT
-                    || Tag.SHULKER_BOXES.isTagged(facType)
-                    || InventoryUtil.isShelf(facType)) {
+            if (InventoryUtil.hasGenericInventory(facType)) {
                 InventoryHolder sourceHolder = (InventoryHolder) PaperLib.getBlockState(fac, false).getState();
                 // Per-slot reads instead of getContents(): that call copies the whole
                 // inventory array every pulse just to pull one stack.
