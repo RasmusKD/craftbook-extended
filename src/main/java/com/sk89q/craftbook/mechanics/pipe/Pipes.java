@@ -1303,7 +1303,7 @@ public class Pipes extends AbstractCraftBookMechanic {
         config.setComment(path + "full-pipe-smoke", "Show black smoke above a paused piston while pulses arrive and its network is refusing items. Makes a blocked far end visible from the sending side, which matters for links and cross-dimension receivers.");
         pipeFullSmoke = config.getBoolean(path + "full-pipe-smoke", true);
 
-        config.setComment(path + "round-robin-pull", "Pull container slots in rotation instead of always taking the first stack, so one stack no output accepts cannot block everything behind it. Disable for strict vanilla first-stack behaviour.");
+        config.setComment(path + "round-robin-pull", "Pull container slots in rotation instead of always taking the first stack, so one stack no output accepts cannot block everything behind it. Display containers (chiseled bookshelves, shelves) are exempt and always pull left to right, since their slots are visible in the world. Disable for strict vanilla first-stack behaviour everywhere.");
         pipeRoundRobinPull = config.getBoolean(path + "round-robin-pull", true);
 
         config.setComment(path + "claim-protect-pulls", "Stop pipes pulling items out of containers inside a GriefPrevention claim unless the pulling piston stands in a claim with the same owner. Closes a theft vector vanilla hoppers don't have. Ignored when GriefPrevention is not installed.");
