@@ -322,10 +322,9 @@ public class ContainerFeeder extends AbstractSelfTriggeredIC {
          * left, back to the start) moves items round forever with no net effect, so it
          * costs a container-to-container transfer every think and produces nothing.
          *
-         * Walking the chain is only unambiguous because a container may hold one feeder,
-         * which rejectIfContainerAlreadyFed already guarantees. The walk is bounded, and
-         * it stops at the first container without a feeder, so an ordinary chain is
-         * cheap to check.
+         * The walk follows feeder signs and hopper spouts alike, since a ring is a
+         * ring no matter which of the two carries each leg. It is bounded, and every
+         * dead end simply stops, so an ordinary chain is cheap to check.
          */
         private static void rejectIfItClosesALoop(ChangedSign sign)
                 throws com.sk89q.craftbook.mechanics.ic.ICVerificationException {
@@ -346,26 +345,43 @@ public class ContainerFeeder extends AbstractSelfTriggeredIC {
          * own ends the walk immediately, so nothing is walked unless a chain exists.
          */
         static boolean chainReturnsTo(org.bukkit.block.Block source, org.bukkit.block.Block target) {
-            org.bukkit.block.Block current = target;
+            // A bounded DFS, because a container has up to three outgoing item
+            // edges, not one: its feeder sign, its own spout when it is a
+            // hopper, and a hopper hanging under it pulling from it. Rings
+            // routed through hoppers (feeder feeds a hopper that points back,
+            // or a 2x2 of alternating hoppers and feeders) close through
+            // exactly those edges, and the runtime guard re-walks this, so a
+            // hopper placed after the sign still puts the feeder to sleep.
+            java.util.ArrayDeque<org.bukkit.block.Block> stack = new java.util.ArrayDeque<>();
             java.util.Set<String> seen = new java.util.HashSet<>();
-            seen.add(key(source));
+            seen.add(key(target));
+            stack.push(target);
+            int visited = 0;
 
-            for (int step = 0; step < MAX_CHAIN_WALK; step++) {
+            while (!stack.isEmpty() && visited++ < MAX_CHAIN_WALK) {
+                org.bukkit.block.Block current = stack.pop();
                 // Never pull chunks in to run this check. A chain that leaves loaded
                 // ground cannot be feeding anything right now anyway, and forcing the
                 // world to load for it would cost more than the ring.
                 if (!current.getWorld().isChunkLoaded(current.getX() >> 4, current.getZ() >> 4))
-                    return false;
+                    continue;
                 if (!InventoryUtil.doesBlockHaveInventory(current))
-                    return false;                 // chain ends in something that is not a container
+                    continue;
                 if (current.equals(source))
                     return true;
-                if (!seen.add(key(current)))
-                    return false;                 // a loop further along that does not include us
-                org.bukkit.block.Block next = followFeeder(current);
-                if (next == null)
-                    return false;                 // no feeder on this container, chain ends
-                current = next;
+
+                org.bukkit.block.Block viaFeeder = followFeeder(current);
+                if (viaFeeder != null && seen.add(key(viaFeeder)))
+                    stack.push(viaFeeder);
+                if (current.getType() == org.bukkit.Material.HOPPER) {
+                    org.bukkit.block.data.type.Hopper hopperData = (org.bukkit.block.data.type.Hopper) current.getBlockData();
+                    org.bukkit.block.Block spout = current.getRelative(hopperData.getFacing());
+                    if (seen.add(key(spout)))
+                        stack.push(spout);
+                }
+                org.bukkit.block.Block below = current.getRelative(BlockFace.DOWN);
+                if (below.getType() == org.bukkit.Material.HOPPER && seen.add(key(below)))
+                    stack.push(below);
             }
             return false;
         }
