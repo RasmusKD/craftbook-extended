@@ -336,7 +336,7 @@ public class ContainerFeeder extends AbstractSelfTriggeredIC {
             BlockFace first = resolveDirection(sign.getLine(2), signBlock);
             if (chainReturnsTo(source, source.getRelative(first)))
                 throw new com.sk89q.craftbook.mechanics.ic.ICVerificationException(
-                        "Det skilt ville lukke en ring af feeders. Items ville bare køre rundt i ring.");
+                        "Det skilt ville lukke en ring af feedere og hoppers. Items ville bare køre rundt i ring.");
         }
 
         /**
