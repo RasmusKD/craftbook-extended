@@ -978,7 +978,7 @@ public class Pipes extends AbstractCraftBookMechanic {
                 // the pulled item reappeared in the shelf after landing in the
                 // target).
                 if (pulledAmount > 0)
-                    InventoryUtil.syncDisplayedContainer(fac);
+                    InventoryUtil.syncDisplayedContainer((org.bukkit.block.BlockState) sourceHolder);
 
                 PipeSuckEvent event = new PipeSuckEvent(block, new ArrayList<>(items), fac);
                 Bukkit.getPluginManager().callEvent(event);

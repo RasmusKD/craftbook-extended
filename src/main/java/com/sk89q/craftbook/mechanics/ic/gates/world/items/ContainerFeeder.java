@@ -214,7 +214,8 @@ public class ContainerFeeder extends AbstractSelfTriggeredIC {
 
         io.papermc.lib.features.blockstatesnapshot.BlockStateSnapshotResult srcRes = PaperLib.getBlockState(source, false);
         io.papermc.lib.features.blockstatesnapshot.BlockStateSnapshotResult dstRes = PaperLib.getBlockState(target, false);
-        Inventory src = ((InventoryHolder) srcRes.getState()).getInventory();
+        org.bukkit.block.BlockState srcState = srcRes.getState();
+        Inventory src = ((InventoryHolder) srcState).getInventory();
         InventoryHolder dst = (InventoryHolder) dstRes.getState();
         boolean dbg = System.currentTimeMillis() > debugMoveLogAt && com.sk89q.craftbook.bukkit.CraftBookPlugin.isDebugFlagEnabled("st.feeder");
         if (dbg) debugMoveLogAt = System.currentTimeMillis() + 5000L;
@@ -254,7 +255,7 @@ public class ContainerFeeder extends AbstractSelfTriggeredIC {
                 stack.setAmount(stack.getAmount() - moved);
                 src.setItem(slot, stack);
             }
-            InventoryUtil.syncDisplayedContainer(source);
+            InventoryUtil.syncDisplayedContainer(srcState);
             return true;
         }
         return false;
