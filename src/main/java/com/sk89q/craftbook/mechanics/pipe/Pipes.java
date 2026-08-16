@@ -505,14 +505,12 @@ public class Pipes extends AbstractCraftBookMechanic {
             if (blType == Material.PISTON) {
                 Block bl = world.getBlockAt(bx, by, bz);
                 CachedFilters signFilters = getFilters(bl);
-                // A [Pipe] sign marked 'pass'/'bypass'/'b' turns this piston into a plain
-                // conduit: nothing is deposited here and items flow through untouched.
-                if (!signFilters.passThrough && !processPistonOutput(bl, items, signFilters, runPassThrough, stats))
+                if (!processPistonOutput(bl, items, signFilters, runPassThrough, stats))
                     continue;
             } else if (blType == Material.DROPPER) {
                 Block bl = world.getBlockAt(bx, by, bz);
                 CachedFilters signFilters = getFilters(bl);
-                if (!signFilters.passThrough && !processDropperOutput(bl, items, signFilters, runPassThrough, stats))
+                if (!processDropperOutput(bl, items, signFilters, runPassThrough, stats))
                     continue;
             }
 
@@ -1327,7 +1325,7 @@ public class Pipes extends AbstractCraftBookMechanic {
         config.setComment(path + "link-protection", "GriefPrevention trust required to bind PipeLink senders and receivers inside a claim: none, access, container, build or permission. Claim owners can always bind; unclaimed land is always allowed. Ignored when GriefPrevention is not installed.");
         com.sk89q.craftbook.mechanics.ic.gates.world.miscellaneous.PipeLinkProtection.setLevel(config.getString(path + "link-protection", "permission"));
 
-        config.setComment(path + "pass-through", "Make every pipe run pass-through: items that match no filter continue past filtered pistons and droppers instead of stopping there. The same can be enabled per run by writing 'pass', 'bypass' or 'b' on the first line of the starting sticky piston's [Pipe] sign. On an output piston or dropper's own sign, the marker instead makes that block a plain conduit items always flow through untouched.");
+        config.setComment(path + "pass-through", "Make every pipe run pass-through: items that match no filter continue past filtered pistons and droppers instead of stopping there. The same can be enabled per run by writing 'pass', 'bypass' or 'b' on the first line of the starting sticky piston's [Pipe] sign.");
         pipePassThrough = config.getBoolean(path + "pass-through", false);
     }
 }
