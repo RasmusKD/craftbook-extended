@@ -1,8 +1,6 @@
 package com.sk89q.craftbook.util;
 
-import org.bukkit.Bukkit;
 import org.bukkit.Material;
-import org.bukkit.NamespacedKey;
 import org.bukkit.Tag;
 import org.bukkit.block.Block;
 import org.bukkit.block.BrewingStand;
@@ -50,52 +48,15 @@ public class InventoryUtil {
      * @return The stacks that could not be added.
      */
     /**
-     * The wooden_shelves block tag, resolved at runtime so this compiles
-     * against a pre-shelf API and stays inert (null) on servers without
-     * shelves. Shelves are ordinary 3-slot containers: vanilla hoppers
-     * insert and extract, so pipes and feeders treat them the same.
-     */
-    private static final Tag<Material> WOODEN_SHELVES =
-            Bukkit.getTag(Tag.REGISTRY_BLOCKS, NamespacedKey.minecraft("wooden_shelves"), Material.class);
-
-    /**
-     * Checks whether a material is a shelf.
+     * Checks whether a material is a shelf. Shelves are ordinary 3-slot
+     * containers: vanilla hoppers insert and extract, so pipes and feeders
+     * treat them the same.
      *
      * @param type The material to check.
      * @return If the material is a shelf.
      */
     public static boolean isShelf(Material type) {
-        return WOODEN_SHELVES != null && WOODEN_SHELVES.isTagged(type);
-    }
-
-    /**
-     * The copper chest family: a closed set of eight (four oxidation stages,
-     * waxed or not) that the compile-time API predates, so it is resolved by
-     * name once at load. Membership is an EnumSet lookup, and the set is empty
-     * on servers without copper chests, which keeps the check inert there.
-     */
-    private static final java.util.Set<Material> COPPER_CHESTS = resolveMaterials(
-            "COPPER_CHEST", "EXPOSED_COPPER_CHEST", "WEATHERED_COPPER_CHEST", "OXIDIZED_COPPER_CHEST",
-            "WAXED_COPPER_CHEST", "WAXED_EXPOSED_COPPER_CHEST", "WAXED_WEATHERED_COPPER_CHEST", "WAXED_OXIDIZED_COPPER_CHEST");
-
-    private static java.util.Set<Material> resolveMaterials(String... names) {
-        java.util.EnumSet<Material> set = java.util.EnumSet.noneOf(Material.class);
-        for (String name : names) {
-            Material resolved = Material.getMaterial(name);
-            if (resolved != null)
-                set.add(resolved);
-        }
-        return set;
-    }
-
-    /**
-     * Checks whether a material is a copper chest.
-     *
-     * @param type The material to check.
-     * @return If the material is a copper chest.
-     */
-    public static boolean isCopperChest(Material type) {
-        return COPPER_CHESTS.contains(type);
+        return Tag.WOODEN_SHELVES.isTagged(type);
     }
 
     /**
@@ -162,6 +123,14 @@ public class InventoryUtil {
             case CHISELED_BOOKSHELF:
             case DECORATED_POT:
             case CRAFTER:
+            case COPPER_CHEST:
+            case EXPOSED_COPPER_CHEST:
+            case WEATHERED_COPPER_CHEST:
+            case OXIDIZED_COPPER_CHEST:
+            case WAXED_COPPER_CHEST:
+            case WAXED_EXPOSED_COPPER_CHEST:
+            case WAXED_WEATHERED_COPPER_CHEST:
+            case WAXED_OXIDIZED_COPPER_CHEST:
             case WHITE_SHULKER_BOX:
             case ORANGE_SHULKER_BOX:
             case MAGENTA_SHULKER_BOX:
@@ -181,10 +150,8 @@ public class InventoryUtil {
             case SHULKER_BOX:
                 return true;
             default:
-                // Copper chests are a frozen family the compile-time API cannot
-                // name as cases; shelves are matched by tag because new wood
-                // types keep adding materials.
-                return isCopperChest(type) || isShelf(type);
+                // Shelves are matched by tag because new wood types keep adding materials.
+                return isShelf(type);
         }
     }
 

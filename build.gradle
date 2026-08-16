@@ -13,7 +13,7 @@ buildscript {
     }
 }
 plugins {
-    id 'com.github.johnrengelman.shadow' version '8.1.1'
+    id 'com.gradleup.shadow' version '9.3.1'
     id "com.jfrog.artifactory" version "5.2.2"
 }
 
@@ -52,7 +52,7 @@ allprojects {
 
     java {
         toolchain {
-            languageVersion = JavaLanguageVersion.of(21)
+            languageVersion = JavaLanguageVersion.of(25)
         }
         withJavadocJar()
         withSourcesJar()
@@ -96,12 +96,24 @@ allprojects {
         }
     }
 
+    configurations.all {
+        resolutionStrategy {
+            // paper-api 26.x and WorldEdit's metadata pin incompatible versions of
+            // these (WE says strictly, because Mojang provides them at runtime).
+            // Compile-only classpath, the server supplies the real ones, so the
+            // newest requested versions are forced through the deadlock.
+            force 'com.google.guava:guava:33.6.0-jre'
+            force 'com.google.code.gson:gson:2.13.2'
+            force 'it.unimi.dsi:fastutil:8.5.18'
+        }
+    }
+
     dependencies {
         // The 1.21.5 floor is a build-chain boundary, not an oversight: paper-api 26.x
         // publishes Gradle metadata demanding a Java 25 consumer, which needs Gradle 9,
         // which needs a newer shadow plugin (measured 2026-08-16). New-content materials
         // land via the runtime lookups in InventoryUtil until that chain is modernized.
-        compileOnly 'io.papermc.paper:paper-api:1.21.5-R0.1-SNAPSHOT'
+        compileOnly 'io.papermc.paper:paper-api:26.2.build.112-stable'
         // paper-api no longer exposes legacy commons-lang transitively; the server still ships it.
         compileOnly 'commons-lang:commons-lang:2.6'
         // fastutil (primitive collections, used on the pipe traversal hot path) comes in
@@ -150,7 +162,8 @@ allprojects {
         dependencies {
             include(dependency('io.papermc:paperlib'))
             include(dependency('com.sk89q:squirrelid'))
-            include(dependency("org.bstats:"))
+            include(dependency('org.bstats:bstats-bukkit'))
+            include(dependency('org.bstats:bstats-base'))
         }
         relocate 'org.bstats', 'com.sk89q.craftbook.bukkit.bstats'
         relocate 'com.sk89q.squirrelid', 'com.sk89q.craftbook.util.profile'
