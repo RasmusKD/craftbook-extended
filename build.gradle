@@ -97,6 +97,10 @@ allprojects {
     }
 
     dependencies {
+        // The 1.21.5 floor is a build-chain boundary, not an oversight: paper-api 26.x
+        // publishes Gradle metadata demanding a Java 25 consumer, which needs Gradle 9,
+        // which needs a newer shadow plugin (measured 2026-08-16). New-content materials
+        // land via the runtime lookups in InventoryUtil until that chain is modernized.
         compileOnly 'io.papermc.paper:paper-api:1.21.5-R0.1-SNAPSHOT'
         // paper-api no longer exposes legacy commons-lang transitively; the server still ships it.
         compileOnly 'commons-lang:commons-lang:2.6'
