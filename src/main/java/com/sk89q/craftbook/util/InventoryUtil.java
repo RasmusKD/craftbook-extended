@@ -69,6 +69,36 @@ public class InventoryUtil {
     }
 
     /**
+     * The copper chest family: a closed set of eight (four oxidation stages,
+     * waxed or not) that the compile-time API predates, so it is resolved by
+     * name once at load. Membership is an EnumSet lookup, and the set is empty
+     * on servers without copper chests, which keeps the check inert there.
+     */
+    private static final java.util.Set<Material> COPPER_CHESTS = resolveMaterials(
+            "COPPER_CHEST", "EXPOSED_COPPER_CHEST", "WEATHERED_COPPER_CHEST", "OXIDIZED_COPPER_CHEST",
+            "WAXED_COPPER_CHEST", "WAXED_EXPOSED_COPPER_CHEST", "WAXED_WEATHERED_COPPER_CHEST", "WAXED_OXIDIZED_COPPER_CHEST");
+
+    private static java.util.Set<Material> resolveMaterials(String... names) {
+        java.util.EnumSet<Material> set = java.util.EnumSet.noneOf(Material.class);
+        for (String name : names) {
+            Material resolved = Material.getMaterial(name);
+            if (resolved != null)
+                set.add(resolved);
+        }
+        return set;
+    }
+
+    /**
+     * Checks whether a material is a copper chest.
+     *
+     * @param type The material to check.
+     * @return If the material is a copper chest.
+     */
+    public static boolean isCopperChest(Material type) {
+        return COPPER_CHESTS.contains(type);
+    }
+
+    /**
      * Publishes a display container's contents after a plugin-side mutation.
      * Player interaction is the only thing vanilla syncs on, so a pipe or
      * feeder edit otherwise leaves clients rendering stale contents. The two
@@ -151,8 +181,10 @@ public class InventoryUtil {
             case SHULKER_BOX:
                 return true;
             default:
-                // Shelves are matched by tag because new wood types keep adding materials.
-                return isShelf(type);
+                // Copper chests are a frozen family the compile-time API cannot
+                // name as cases; shelves are matched by tag because new wood
+                // types keep adding materials.
+                return isCopperChest(type) || isShelf(type);
         }
     }
 
