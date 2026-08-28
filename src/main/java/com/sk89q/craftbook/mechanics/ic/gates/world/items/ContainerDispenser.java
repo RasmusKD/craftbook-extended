@@ -44,22 +44,14 @@ public class ContainerDispenser extends AbstractSelfTriggeredIC {
     @Override
     public void load() {
 
-        String amountLine = getSign().getLine(2).trim();
-        if (amountLine.equalsIgnoreCase("all") || amountLine.equals("*")) {
-            // Toem hele beholderen per puls; alle stakke afgaar som EEN
-            // samlet roer-forsendelse, saa intet behoever at ligge paa
-            // jorden undervejs.
-            amount = -1;
-        } else {
-            try {
-                amount = Integer.parseInt(amountLine);
-            } catch (Exception e) {
-                amount = 1;
-            }
+        try {
+            amount = Integer.parseInt(getSign().getLine(2));
+        } catch (Exception e) {
+            amount = 1;
         }
 
         item = ItemSyntax.getItem(getLine(3));
-        if(item != null && amount > 0)
+        if(item != null)
             item.setAmount(amount);
     }
 
@@ -102,98 +94,51 @@ public class ContainerDispenser extends AbstractSelfTriggeredIC {
         int y = b.getY() + 1;
         int z = b.getZ();
         Block bl = CraftBookBukkitUtil.toSign(getSign()).getBlock().getWorld().getBlockAt(x, y, z);
+        ItemStack stack = null;
         Inventory inv = null;
-        ArrayList<ItemStack> matching = new ArrayList<>();
         if (bl.getType() == Material.CHEST) {
             Chest c = (Chest) bl.getState();
-            inv = c.getInventory();
             for (ItemStack it : c.getInventory().getContents()) {
                 if (ItemUtil.isStackValid(it)) {
                     if(item == null || ItemUtil.areItemsIdentical(it, item)) {
-                        matching.add(it);
+                        stack = it;
+                        inv = c.getInventory();
+                        break;
                     }
                 }
             }
         } else if (bl.getType() == Material.FURNACE) {
             Furnace c = (Furnace) bl.getState();
+            stack = c.getInventory().getResult();
             inv = c.getInventory();
-            ItemStack result = c.getInventory().getResult();
-            if (ItemUtil.isStackValid(result)) {
-                matching.add(result);
-            }
         } else if (bl.getType() == Material.BREWING_STAND) {
             BrewingStand c = (BrewingStand) bl.getState();
-            inv = c.getInventory();
             for (ItemStack it : c.getInventory().getContents()) {
                 if (ItemUtil.isStackValid(it)) {
                     if (ItemUtil.areItemsIdentical(it, c.getInventory().getIngredient())) {
                         continue;
                     }
                     if(item == null || ItemUtil.areItemsIdentical(it, item)) {
-                        matching.add(it);
+                        stack = it;
+                        inv = c.getInventory();
+                        break;
                     }
                 }
             }
         } else if (bl.getType() == Material.DISPENSER) {
             Dispenser c = (Dispenser) bl.getState();
-            inv = c.getInventory();
             for (ItemStack it : c.getInventory().getContents()) {
                 if (ItemUtil.isStackValid(it)) {
                     if(item == null || ItemUtil.areItemsIdentical(it, item)) {
-                        matching.add(it);
+                        stack = it;
+                        inv = c.getInventory();
+                        break;
                     }
                 }
             }
         }
 
-        if (inv == null || matching.isEmpty()) {
-            return false;
-        }
-        if (amount < 0) {
-            return dispenseAll(inv, matching);
-        }
-        return dispenseItem(inv, matching.get(0));
-    }
-
-    /**
-     * "all"-tilstanden: alle matchende stakke fjernes fra beholderen og
-     * afgaar som EEN roer-forsendelse (eller eet samlet drop ved skiltet,
-     * hvis der ikke sidder et roer paa bagsiden). Fire clocks og eet item
-     * ad gangen bliver til een puls og en tom kiste.
-     */
-    private boolean dispenseAll(Inventory inv, ArrayList<ItemStack> matching) {
-
-        ArrayList<ItemStack> removed = new ArrayList<>();
-        for (ItemStack stack : matching) {
-            ItemStack take = stack.clone();
-            HashMap<Integer, ItemStack> over = inv.removeItem(take.clone());
-            if (over.isEmpty()) {
-                removed.add(take);
-            } else {
-                int got = take.getAmount() - over.values().iterator().next().getAmount();
-                if (got > 0) {
-                    take.setAmount(got);
-                    removed.add(take);
-                }
-            }
-        }
-        if (removed.isEmpty()) {
-            return false;
-        }
-
-        BlockFace back = SignUtil.getBack(CraftBookBukkitUtil.toSign(getSign()).getBlock());
-        Block pipe = getBackBlock().getRelative(back);
-
-        PipeRequestEvent event = new PipeRequestEvent(pipe, new ArrayList<>(removed), getBackBlock());
-        Bukkit.getPluginManager().callEvent(event);
-
-        if(!event.isValid())
-            return true;
-
-        for (ItemStack stack : event.getItems())
-            CraftBookBukkitUtil.toSign(getSign()).getWorld().dropItemNaturally(
-                    CraftBookBukkitUtil.toSign(getSign()).getLocation(), stack);
-        return true;
+        return !(stack == null || inv == null) && dispenseItem(inv, stack);
     }
 
     public boolean dispenseItem(Inventory inv, ItemStack old) {
@@ -267,7 +212,7 @@ public class ContainerDispenser extends AbstractSelfTriggeredIC {
         @Override
         public String[] getLineHelp() {
 
-            return new String[] {"amount to dispense (or 'all')", null};
+            return new String[] {"amount to dispense", null};
         }
     }
 }
